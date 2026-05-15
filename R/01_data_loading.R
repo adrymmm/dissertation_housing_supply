@@ -1,11 +1,66 @@
+library(tidyr)
 library(readr)
-library(dplyr)
 
-vars <- c("lhstarts", "lrprc", "lvol", "base_rate", "lstock", "lrcc")
+col_names <- c("NA", "year", "quarter", "starts", "nom_price", "nom_cc",
+              "transactions", "stock", "r3", "deflator_inc", "deflator_cc")
 
-df <- read_csv("data/processed/quarterly_master.csv") |>
-  mutate(date = as.Date(date)) |>
-  filter(date >= as.Date("1987-01-01")) # Starting at earliest date
+uk <- read_csv("data/processed/UK_master.csv", skip=7, col_names=col_names)
+eng <- read_csv("data/processed/england_master.csv", skip=7, col_names=col_names)
 
-par(mfrow = c(3, 2), mar = c(2, 4, 2, 1))
-for (v in vars) plot(df$date, df[[v]], type = "l", main = v, ylab = "")
+uk$`NA` <- NULL
+eng$`NA` <- NULL
+
+uk <- fill(uk, year)
+eng <- fill(eng, year)
+
+
+for (col in c("starts", "nom_price", "transactions", "stock")) {
+  uk[[col]]  <- as.numeric(gsub(",", "", uk[[col]]))
+  eng[[col]] <- as.numeric(gsub(",", "", eng[[col]]))
+}
+
+# Filtering empty rows
+eng <- eng[13:nrow(eng), ]
+
+uk$quarter <- as.numeric(sub("Q", "", uk$quarter))
+eng$quarter <- as.numeric(sub("Q", "", eng$quarter))
+
+
+uk_ts <- ts(uk[, c("starts", "nom_price", "nom_cc", "transactions",
+                   "stock", "r3", "deflator_inc", "deflator_cc")],
+            start = c(uk$year[1], uk$quarter[1]), frequency = 4)
+
+eng_ts <- ts(eng[, c("starts", "nom_price", "nom_cc", "transactions",
+                     "stock", "r3", "deflator_inc", "deflator_cc")],
+             start = c(eng$year[1], eng$quarter[1]), frequency = 4)
+
+# Deflate and log-transform — r3 enters in levels, no log
+transform_vecm <- function(x) {
+  lhstarts <- log(x[, "starts"] / 1000)
+  lrprc    <- log(x[, "nom_price"]   / x[, "deflator_inc"])
+  lvol     <- log(x[, "transactions"] / 1000)
+  lstock   <- log(x[, "stock"])
+  lrcc     <- log(x[, "nom_cc"]      / x[, "deflator_cc"])
+  r3       <- x[, "r3"]
+  
+  ts(cbind(lhstarts, lrprc, lvol, r3, lstock, lrcc),
+     start = start(x), frequency = frequency(x))
+}
+
+uk_tf  <- transform_vecm(uk_ts)
+eng_tf <- transform_vecm(eng_ts)
+
+plot_vecm_vars <- function(tf, main_prefix = "") {
+  labels <- c("Housing Starts (log)", "Real House Price Index (log)",
+              "Transactions (log)", "Short-term Interest Rate",
+              "Housing Stock (log)", "Construction Costs (log)")
+  par(mfrow = c(3, 2), mar = c(3, 3, 2, 1))
+  for (i in 1:6) {
+    plot(tf[, i], main = paste0(main_prefix, labels[i]),
+         ylab = "", xlab = "", col = "steelblue", lwd = 1.2)
+  }
+  par(mfrow = c(1, 1))
+}
+
+plot_vecm_vars(uk_tf,  main_prefix = "UK - ")
+plot_vecm_vars(eng_tf, main_prefix = "England - ")

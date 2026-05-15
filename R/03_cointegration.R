@@ -1,22 +1,28 @@
-library(readr)
-library(dplyr)
-library(urca)
 library(vars)
 
-vars <- c("lhstarts", "lrprc", "lvol", "base_rate", "lstock", "lrcc")
+make_seas_dummies <- function(tf) {
+  qq <- cycle(tf)
+  cbind(d1 = as.numeric(qq == 1),
+        d2 = as.numeric(qq == 2),
+        d3 = as.numeric(qq == 3))
+}
 
-df_v <- read_csv("data/processed/quarterly_master.csv") |>
-  mutate(date = as.Date(date)) |>
-  filter(complete.cases(across(all_of(vars)))) |>
-  dplyr::select(all_of(vars)) |>
-  as.matrix()
+# Step 1 — lag selection
+for (nm in c("uk", "eng")) {
+  tf    <- if (nm == "uk") uk_tf else eng_tf
+  seas  <- make_seas_dummies(tf)
+  vs    <- VARselect(tf, lag.max = 8, type = "const", exogen = seas)
+  cat(nm, "VARselect:\n"); print(vs$selection); cat("\n")
+}
 
-pmax <- floor(12 * (nrow(df_v) / 100)^0.25)
+# Step 2 — Johansen max-eigenvalue
+run_johansen <- function(tf, K, label) {
+  seas  <- make_seas_dummies(tf)
+  jtest <- ca.jo(tf, type = "eigen", ecdet = "const", K = K, dumvar = seas)
+  cat("\n===", label, "| K =", K, "===\n")
+  print(summary(jtest))
+}
 
-varsel <- VARselect(df_v, lag.max = pmax, type = "const")
-varsel$selection
-
-K <- varsel$selection["AIC(n)"]
-
-summary(ca.jo(df_v, type = "trace", ecdet = "const", K = K, spec = "longrun")) |> print()
-summary(ca.jo(df_v, type = "eigen", ecdet = "const", K = K, spec = "longrun")) |> print()
+# Run with BIC-selected K — also try K=2 to match Michalis if BIC differs
+run_johansen(uk_tf,  K = 2, "UK")
+run_johansen(eng_tf, K = 2, "England")
