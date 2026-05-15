@@ -1,6 +1,8 @@
 library(tseries)
 library(urca)
 
+schwert_pmax <- function(x) floor(12 * (length(x) / 100)^(1/4))
+
 run_adf <- function(x, type) {
   T_full <- length(x)
   pmax   <- schwert_pmax(x)

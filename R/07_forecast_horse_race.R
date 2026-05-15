@@ -20,15 +20,10 @@ cat("Training obs:", nrow(eng_train), "| Test obs:", h, "\n")
 fc_naive <- rep(tail(as.numeric(eng_train[, "lhstarts"]), 1), h)
 
 # ---- 3. VECM — unconditional ----
-jo_tr   <- ca.jo(eng_train, type = "eigen", ecdet = "const",
-                 K = 2, dumvar = make_seas_dummies(eng_train))
-var_tr  <- vec2var(jo_tr, r = 1)
+jo_tr <- ca.jo(eng_train, type = "eigen", ecdet = "const", K = 2, season = 4)
+var_tr <- vec2var(jo_tr, r = 1)
 
-seas_test <- make_seas_dummies(eng_test)   # h x 3 matrix
-
-fc_vecm <- predict(var_tr, n.ahead = h,
-                   dumvar = seas_test)$fcst$lhstarts[, "fcst"]
-
+fc_vecm <- predict(var_tr, n.ahead = h)$fcst$lhstarts[, "fcst"]
 # ---- 4. ARDL — conditional on actual future regressors ----
 eng_df_tr   <- to_ardl_df(eng_train)
 ardl_tr_fit <- auto_ardl(
@@ -60,13 +55,9 @@ for (i in 1:h) {
   for (k in seq_along(vars_order)) {
     v  <- vars_order[k]
     qk <- ord[k + 1]
-    if (qk == 0) {
-      nm <- v;             val <- full_mat[t,   v]  # contemporaneous
-    } else {
-      nm <- paste0("L(", v, ", 1)"); val <- full_mat[t-1, v]  # lagged
-    }
+    nm  <- paste0("L(", v, ", 1)")
+    val <- full_mat[t - 1, v]
     if (nm %in% names(b)) ect <- ect + b[nm] * val
-  }
   
   # Short-run lhstarts lags (uses forecasted values for t-j)
   sr_lhs <- 0

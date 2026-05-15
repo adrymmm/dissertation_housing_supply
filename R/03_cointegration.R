@@ -1,28 +1,21 @@
-library(vars)
+library(tsDyn)
 
-make_seas_dummies <- function(tf) {
+run_rank_test <- function(tf, lag, label) {
+  seas <- make_centered_seas(tf)
+  vc <- VECM(tf, lag = lag, include = "const", LRinclude = "none",
+             estim = "ML", exogen = seas)
+  cat("\n===", label, "| lag =", lag, "===\n")
+  print(rank.test(vc, type = "eigen"))
+  print(rank.test(vc, type = "trace"))
+}
+
+# Centered seasonals (sum to zero), since tsDyn has no `season` arg
+make_centered_seas <- function(tf) {
   qq <- cycle(tf)
-  cbind(d1 = as.numeric(qq == 1),
-        d2 = as.numeric(qq == 2),
-        d3 = as.numeric(qq == 3))
+  cbind(sd1 = (qq == 1) - 1/4,
+        sd2 = (qq == 2) - 1/4,
+        sd3 = (qq == 3) - 1/4)
 }
 
-# Step 1 — lag selection
-for (nm in c("uk", "eng")) {
-  tf    <- if (nm == "uk") uk_tf else eng_tf
-  seas  <- make_seas_dummies(tf)
-  vs    <- VARselect(tf, lag.max = 8, type = "const", exogen = seas)
-  cat(nm, "VARselect:\n"); print(vs$selection); cat("\n")
-}
-
-# Step 2 — Johansen max-eigenvalue
-run_johansen <- function(tf, K, label) {
-  seas  <- make_seas_dummies(tf)
-  jtest <- ca.jo(tf, type = "eigen", ecdet = "const", K = K, dumvar = seas)
-  cat("\n===", label, "| K =", K, "===\n")
-  print(summary(jtest))
-}
-
-# Run with BIC-selected K — also try K=2 to match Michalis if BIC differs
-run_johansen(uk_tf,  K = 2, "UK")
-run_johansen(eng_tf, K = 2, "England")
+run_rank_test(uk_tf,  lag = 1, "UK")
+run_rank_test(eng_tf, lag = 1, "England")

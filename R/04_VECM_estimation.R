@@ -1,56 +1,29 @@
-library(vars)
-library(urca)
+library(tsDyn)
 
-# Estimate VECM with r=1, K=2, seasonal dummies
-jo_uk  <- ca.jo(uk_tf,  type = "eigen", ecdet = "const",
-                K = 2, dumvar = make_seas_dummies(uk_tf))
-jo_eng <- ca.jo(eng_tf, type = "eigen", ecdet = "const",
-                K = 2, dumvar = make_seas_dummies(eng_tf))
+vecm_uk  <- VECM(uk_tf,  lag = 1, r = 1, include = "const",
+                 LRinclude = "none", estim = "ML",
+                 exogen = make_centered_seas(uk_tf))
+vecm_eng <- VECM(eng_tf, lag = 1, r = 1, include = "const",
+                 LRinclude = "none", estim = "ML",
+                 exogen = make_centered_seas(eng_tf))
 
-vecm_uk  <- cajorls(jo_uk,  r = 1)
-vecm_eng <- cajorls(jo_eng, r = 1)
+# Cointegrating vectors — tsDyn stores β with first variable normalised to 1
+cat("=== UK cointegrating vector ===\n");      print(coefB(vecm_uk))
+cat("\n=== England cointegrating vector ===\n"); print(coefB(vecm_eng))
 
-# Cointegrating vectors (normalised on lhstarts)
-cat("=== UK cointegrating vector ===\n")
-print(vecm_uk$beta)
+# α (loadings)
+cat("\n=== UK α ===\n");      print(coefA(vecm_uk))
+cat("\n=== England α ===\n"); print(coefA(vecm_eng))
 
-cat("\n=== England cointegrating vector ===\n")
-print(vecm_eng$beta)
-
-# lhstarts equation only — the one we care about
-cat("\n=== UK lhstarts equation ===\n")
-print(summary(vecm_uk$rlm)$"Response lhstarts.d")
-
-cat("\n=== England lhstarts equation ===\n")
-print(summary(vecm_eng$rlm)$"Response lhstarts.d")
+# Full coefficient table (per-equation, like cajorls$rlm)
+summary(vecm_uk)
+summary(vecm_eng)
 
 # Diagnostics
 # Convert ca.jo objects to VAR representation for diagnostic tools
-var_uk  <- vec2var(jo_uk,  r = 1)
-var_eng <- vec2var(jo_eng, r = 1)
+# 1. Residuals are available directly
+res_uk <- residuals(vecm_uk)
 
-# Serial correlation — Portmanteau test
-cat("=== Serial correlation ===\n")
-print(serial.test(var_uk,  lags.pt = 16, type = "PT.asymptotic"))
-print(serial.test(var_eng, lags.pt = 16, type = "PT.asymptotic"))
-
-# Normality — JB test on residuals
-cat("\n=== Normality ===\n")
-print(normality.test(var_uk,  multivariate.only = FALSE))
-print(normality.test(var_eng, multivariate.only = FALSE))
-
-# Stability — CUSUM on lhstarts residuals directly
-cat("\n=== Structural stability (lhstarts residuals) ===\n")
-resid_uk  <- residuals(var_uk)[,  "resids of lhstarts"]
-resid_eng <- residuals(var_eng)[, "resids of lhstarts"]
-
-par(mfrow = c(1, 2))
-plot(cumsum(resid_uk),  type = "l", main = "CUSUM - UK lhstarts",
-     ylab = "", xlab = "")
-abline(h = 0, lty = 2)
-plot(cumsum(resid_eng), type = "l", main = "CUSUM - England lhstarts",
-     ylab = "", xlab = "")
-abline(h = 0, lty = 2)
-par(mfrow = c(1, 1))
-
-# Evidence for NARDL
+# 2. For Portmanteau / JB, run them on the residual matrix manually
+Box.test(res_uk[, "lhstarts"], lag = 16, type = "Ljung-Box")
+shapiro.test(res_uk[, "lhstarts"])

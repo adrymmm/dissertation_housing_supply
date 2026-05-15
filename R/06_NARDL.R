@@ -59,7 +59,6 @@ nardl_uk <- dynlm(
     d(L(lhstarts, 1)) + d(L(lhstarts, 2)) + d(L(lhstarts, 3)) +
     d(lrprc_pos) + d(lrprc_neg) +
     d(lvol) + d(L(lvol, 1)) + d(L(lvol, 2)) + d(L(lvol, 3)) +
-    L(r3, 0) +
     d(lstock) +
     d(lrcc) + d(L(lrcc, 1)) + d(L(lrcc, 2)) + d(L(lrcc, 3)) +
     d1 + d2 + d3,
