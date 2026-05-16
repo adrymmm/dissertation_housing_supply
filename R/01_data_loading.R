@@ -13,14 +13,8 @@ eng$`NA` <- NULL
 uk <- fill(uk, year)
 eng <- fill(eng, year)
 
-
-for (col in c("starts", "nom_price", "transactions", "stock")) {
-  uk[[col]]  <- as.numeric(gsub(",", "", uk[[col]]))
-  eng[[col]] <- as.numeric(gsub(",", "", eng[[col]]))
-}
-
-# Filtering empty rows
-eng <- eng[13:nrow(eng), ]
+uk <- drop_na(uk)
+eng <- drop_na(eng)
 
 uk$quarter <- as.numeric(sub("Q", "", uk$quarter))
 eng$quarter <- as.numeric(sub("Q", "", eng$quarter))
