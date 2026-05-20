@@ -46,8 +46,8 @@ eng_tf <- transform_vecm(eng_ts)
 
 plot_vecm_vars <- function(tf, main_prefix = "") {
   labels <- c("Housing Starts (log)", "Real House Price Index (log)",
-              "Transactions (log)", "Short-term Interest Rate",
-              "Housing Stock (log)", "Construction Costs (log)")
+              "UK Transactions (log)", "UK Short-term Interest Rate",
+              "Housing Stock (log)", " UK Construction Costs (log)")
   par(mfrow = c(3, 2), mar = c(3, 3, 2, 1))
   for (i in 1:6) {
     plot(tf[, i], main = paste0(main_prefix, labels[i]),
