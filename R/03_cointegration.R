@@ -53,27 +53,3 @@ summary(jo_eng_k5)
 
 jo_eng_k5_eig <- ca.jo(eng_tf, type="eigen", ecdet="trend", K=5, spec="transitory", season=4)
 summary(jo_eng_k5_eig)
-
-# Serial Correlation test with K=5, r=1
-var_eng_k5 <- vec2var(jo_eng_k5, r = 1) 
-serial.test(var_eng_k5, lags.pt = 16, type = "PT.adjusted")
-
-# Extracting r=1 VECM coefficients
-cajorls(jo_eng_k5, r=1)$beta
-summary(cajorls(jo_eng_k5, r=1)$rlm)
-
-# Diagnostics on K=5
-normality.test(var_eng_k5, multivariate.only = FALSE) # Reject normality for all - BAD
-arch.test(var_eng_k5, lags.multi = 5, multivariate.only = FALSE)
-# ARCH effects detected in lvol, r3, lstock, multivariate - BAD
-
-# Testing roots
-var_lev <- VAR(eng_tf, p = 5, type = "both", season = 4)
-roots(var_lev)
-# All roots lie in unit circle- GOOD
-
-# Testing CUSUM on lhstarts
-res <- residuals(var_eng_k5)[, "resids of lhstarts"]   # match exact colname
-plot(cumsum(res), type = "l", main = "CUSUM — lhstarts resids")
-abline(h = 0, lty = 2)
-# Evidence for NARDL, coefficients for lhstarts unstable around downturns

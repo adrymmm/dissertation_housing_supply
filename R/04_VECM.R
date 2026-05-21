@@ -9,7 +9,7 @@ serial.test(var_eng_k5, lags.pt = 16, type = "PT.adjusted")
 
 # Extracting cointegrating vector
 cajorls(jo_eng_k5, r = 1)$beta  
-
+  
 # Extracting ECM short run equation
 summary(cajorls(jo_eng_k5, r = 1)$rlm)
 
@@ -37,18 +37,23 @@ abline(h = 0, lty = 2)
 # Evidence for NARDL, coefficients for lhstarts unstable around downturns
 
 # --Impulse Response Functions--
-irf_eng <- irf(var_eng_k5,
-               impulse  = "lrprc",        # shock to real price
-               response = "lhstarts",     # supply response
-               n.ahead  = 20,             # 20 quarters = 5 years
-               boot     = TRUE, runs = 500, ci = 0.95)
-plot(irf_eng)
+# Orthogonalizing
+eng_tf2 <- eng_tf[, c("lrprc","lvol","r3","lstock","lrcc","lhstarts")]
+jo2  <- ca.jo(eng_tf2, type="trace", ecdet="trend", K=5, spec="transitory", season=4)
+v2   <- vec2var(jo2, r = 1)
+irf2 <- irf(v2, impulse="lrprc", response="lhstarts", # shock to real price, supply response
+            n.ahead=20, ortho=TRUE, boot=TRUE, runs=1000) # 5 years, ortho
+plot(irf2)
 
 # Cumulative response = long-run supply effect of a price shock
-irf_cum <- irf(var_eng_k5, impulse = "lrprc", response = "lhstarts",
+irf_cum <- irf(v2, impulse = "lrprc", response = "lhstarts",
                n.ahead = 20, cumulative = TRUE, boot = TRUE, runs = 500)
 plot(irf_cum)
 
+# -- FEVD --
+fevd_eng <- fevd(v2, n.ahead = 20)
+fevd_eng$lhstarts        # the row that matters: variance decomp OF starts
+plot(fevd_eng)           
 # --Weak exogeneity--
 # alpha restriction: zero rows = weakly exogenous to long-run relation
 # free: lhstarts, lvol, lstock, lrcc | restricted: lrprc, r3
