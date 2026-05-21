@@ -1,4 +1,5 @@
 library(ARDL)
+library(strucchange)
 
 # Converting to dataframe
 dat <- as.data.frame(eng_tf)
@@ -21,3 +22,17 @@ ardl_ecm <- recm(ardl_best, case = 3)
 summary(ardl_ecm)                       
 # Long-run elasticities
 multipliers(ardl_best)                
+
+df <- ardl_best$model
+names(df) <- make.names(names(df))   # L(lhstarts, 1) -> L.lhstarts..1.
+f  <- as.formula(paste(names(df)[1], "~", paste(names(df)[-1], collapse = " + ")))
+
+# CUSUM
+plot(efp(f, data = df, type = "Rec-CUSUM"), main = "CUSUM")
+
+# CUSUMSQ
+rr <- recresid(f, data = df)
+n  <- length(rr); sq <- cumsum(rr^2)/sum(rr^2); i <- seq_along(sq)
+plot(i, sq, type = "l", main = "CUSUMSQ", xlab = "", ylab = "")
+lines(i, i/n + 0.948/sqrt(n), lty = 2, col = "red")
+lines(i, i/n - 0.948/sqrt(n), lty = 2, col = "red")
