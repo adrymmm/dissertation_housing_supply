@@ -39,7 +39,7 @@ serial.test(var_eng, lags.pt = 16, type = "PT.asymptotic")
 # Considerable serial correlation need to test with higher lag order
 
 # Testing serial correlation over K=2-6
-for (k in 2:6) {
+for (k in 2:8) {
   jo_k  <- ca.jo(eng_tf, type="trace", ecdet="trend", K=k, spec="transitory", season=4)
   var_k <- vec2var(jo_k, r = 1)          
   pt    <- serial.test(var_k, lags.pt = 16, type = "PT.asymptotic")
@@ -53,3 +53,23 @@ summary(jo_eng_k5)
 
 jo_eng_k5_eig <- ca.jo(eng_tf, type="eigen", ecdet="trend", K=5, spec="transitory", season=4)
 summary(jo_eng_k5_eig)
+
+# variance of differences
+apply(diff(eng_tf), 2, var)
+# acf of lstock diff
+acf(diff(eng_tf[,"lstock"]), lag.max=20)
+
+# ===== Diagnostic: 5-var Johansen excluding lstock =====
+eng_tf_5 <- eng_tf[, c("lhstarts","lrprc","lvol","r3","lrcc")]
+
+lagsel_5 <- VARselect(eng_tf_5, lag.max = pmax_eng, type = "both")
+print(lagsel_5$selection)
+K_5 <- as.integer(unname(lagsel_5$selection["SC(n)"]))
+
+jo_5 <- ca.jo(eng_tf_5, type="trace", ecdet="trend",
+              K=K_5, spec="transitory", season=4)
+summary(jo_5)
+
+jo_5_eig <- ca.jo(eng_tf_5, type="eigen", ecdet="trend",
+                  K=K_5, spec="transitory", season=4)
+summary(jo_5_eig)
