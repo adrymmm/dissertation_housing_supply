@@ -1,60 +1,50 @@
+library(dplyr)
+library(ggplot2)
 library(tidyr)
 library(readr)
+library(zoo)
 
-col_names <- c("NA", "year", "quarter", "starts", "nom_price", "nom_cc",
-              "transactions", "stock", "r3", "deflator_inc", "deflator_cc")
+df <- read_csv("data/python_master/england_master.csv")
+colnames(df)[1] <- "Date"
+df <- na.omit(df)
 
-uk <- read_csv("data/processed/UK_master.csv", skip=7, col_names=col_names)
-eng <- read_csv("data/processed/england_master.csv", skip=7, col_names=col_names)
+# Parsing to date
+df$Date <- as.Date(zoo::as.yearqtr(df$Date, format = "%YQ%q"))
 
-uk$`NA` <- NULL
-eng$`NA` <- NULL
+df <- df %>%
+  mutate(
+    lrprc  = log(hprice / p_def),   # real house prices
+    lrcc   = log(cc / cc_def),       # real construction costs
+    lhstarts = log(starts),          # starts (no deflation needed)
+    lvol   = log(vol),               # transactions volume
+    lstock = log(hstock),            # housing stock
+    r3     = rate                    # interest rate
+  )
 
-uk <- fill(uk, year)
-eng <- fill(eng, year)
+# Long format for plot
+plot_df <- df %>%
+  select(Date, lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
+  pivot_longer(-Date, names_to = "variable", values_to = "value")
 
-uk <- drop_na(uk)
-eng <- drop_na(eng)
+# --- Labels ---
+var_labels <- c(
+  lhstarts = "log Starts",
+  lrprc    = "log Real House Price",
+  lvol     = "log Transactions",
+  r3       = "Interest Rate",
+  lstock   = "log Housing Stock",
+  lrcc     = "log Real Construction Cost"
+)
 
-uk$quarter <- as.numeric(sub("Q", "", uk$quarter))
-eng$quarter <- as.numeric(sub("Q", "", eng$quarter))
+plot_df$variable <- factor(plot_df$variable,
+                           levels = names(var_labels),
+                           labels = var_labels)
 
-
-uk_ts <- ts(uk[, c("starts", "nom_price", "nom_cc", "transactions",
-                   "stock", "r3", "deflator_inc", "deflator_cc")],
-            start = c(uk$year[1], uk$quarter[1]), frequency = 4)
-
-eng_ts <- ts(eng[, c("starts", "nom_price", "nom_cc", "transactions",
-                     "stock", "r3", "deflator_inc", "deflator_cc")],
-             start = c(eng$year[1], eng$quarter[1]), frequency = 4)
-
-# Deflate and log-transform — r3 enters in levels, no log
-transform_vecm <- function(x) {
-  lhstarts <- log(x[, "starts"] / 1000)
-  lrprc    <- log(x[, "nom_price"]   / x[, "deflator_inc"])
-  lvol     <- log(x[, "transactions"] / 1000)
-  lstock   <- log(x[, "stock"])
-  lrcc     <- log(x[, "nom_cc"]      / x[, "deflator_cc"])
-  r3       <- x[, "r3"]
-  
-  ts(cbind(lhstarts, lrprc, lvol, r3, lstock, lrcc),
-     start = start(x), frequency = frequency(x))
-}
-
-uk_tf  <- transform_vecm(uk_ts)
-eng_tf <- transform_vecm(eng_ts)
-
-plot_vecm_vars <- function(tf, main_prefix = "") {
-  labels <- c("Housing Starts (log)", "Real House Price Index (log)",
-              "UK Transactions (log)", "UK Short-term Interest Rate",
-              "Housing Stock (log)", " UK Construction Costs (log)")
-  par(mfrow = c(3, 2), mar = c(3, 3, 2, 1))
-  for (i in 1:6) {
-    plot(tf[, i], main = paste0(main_prefix, labels[i]),
-         ylab = "", xlab = "", col = "steelblue", lwd = 1.2)
-  }
-  par(mfrow = c(1, 1))
-}
-
-plot_vecm_vars(uk_tf,  main_prefix = "UK - ")
-plot_vecm_vars(eng_tf, main_prefix = "England - ")
+# Plotting
+ggplot(plot_df, aes(x = Date, y = value)) +
+  geom_line(colour = "#2c7bb6", linewidth = 0.5) +
+  facet_wrap(~ variable, scales = "free_y", ncol = 2) +
+  labs(title = "VECM Variables - England 1975Q1–2025Q4",
+       x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(strip.text = element_text(face = "bold"))
