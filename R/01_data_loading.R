@@ -44,7 +44,7 @@ plot_df$variable <- factor(plot_df$variable,
 ggplot(plot_df, aes(x = Date, y = value)) +
   geom_line(colour = "#2c7bb6", linewidth = 0.5) +
   facet_wrap(~ variable, scales = "free_y", ncol = 2) +
-  labs(title = "VECM Variables - England 1975Q1–2025Q4",
+  labs(title = "VECM Variables - England 1975Q1-2025Q4",
        x = NULL, y = NULL) +
   theme_minimal(base_size = 11) +
   theme(strip.text = element_text(face = "bold"))

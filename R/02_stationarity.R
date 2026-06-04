@@ -47,21 +47,43 @@ library(foreach); library(doSNOW); library(parallel)
 cl <- makeCluster(max(1, detectCores() - 1))   # all cores but one
 registerDoSNOW(cl)
 
-res <- ur.ls.bootstrap(y = as.vector(eng_tf[,"lhstarts"]),
-                       model = "break", breaks = 2,
-                       lags = pmax_eng, method = "Fixed",
-                       critval = "theoretical",         
-                       pn = 0.1, print.results = "print")
+trend_vars <- setdiff(colnames(eng_tf), "r3")
+
+for (v in trend_vars) {
+  cat("\n---Two-Break (Model C, trend) for", v, "---\n")
+  ur.ls.bootstrap(y = as.vector(eng_tf[, v]),
+                  model = "break", breaks = 2, lags = pmax_eng,
+                  method = "GTOS", critval = "theoretical",
+                  pn = 0.1, print.results = "print")
+}
+
+cat("\n---Two-Break (Model A, level) for rate ---\n")
+ur.ls.bootstrap(y = as.vector(eng_tf[, "r3"]),
+                model = "crash", breaks = 2, lags = pmax_eng,
+                method = "GTOS", critval = "theoretical",
+                pn = 0.1, print.results = "print")
 
 stopCluster(cl)
 
-# ZA single-break test (Michalis does not run this; robustness extension):
-#   - lhstarts: tau = -5.51, rejects UR at 5%, break at pos 132 (2008Q4, GFC)
-#   - lrprc:    tau = -4.07, cannot reject UR; break at pos 105 (2002Q1)
-#   - lvol:     tau = -3.78, cannot reject UR; break at pos 132 (2008Q4)
-#   - r3:       tau = -4.50, rejects at 10% only; break at pos 188 (2022Q1, post-ZLB)
-#              NB: UK r3 break at 1992Q3 (ERM); divergence likely Bank Rate vs LIBOR splice
-#   - lstock:   tau = -5.25, rejects at 5%; break at pos 69 (1992Q3)
-#              NB: inter-censal stock revision artefact; outside estimation window
-#   - lrcc:     tau = -4.12, cannot reject UR; break at pos 103 (2001Q3)
-# Combined with ADF + KPSS evidence, all six treated as I(1) for VECM analysis.
+# Lee-Strazicich two-break LM test (Michalis runs neither ZA nor LS; robustness extension):
+#   Model C (intercept + trend break) for logs; Model A (intercept break only) for r3.
+#   Lags by general-to-specific from Schwert pmax = 14. Break positions on full 204-obs grid (pos 1 = 1975Q1).
+#   - lhstarts: tau = -5.71, rejects UR at 10% (misses 5% by 0.02; crit -5.73); breaks 2008Q1 (GFC), 2016Q2
+#              NB: FLIPS vs fixed-14 run (-4.67, could not reject). Now all four tests (ADF -4.07@1%,
+#                  KPSS fails to reject stationarity, ZA -5.51@5%, LS -5.71@10%) lean (trend-)stationary.
+#                  I(1) classification rests on Michalis precedent only, not on own evidence.
+#   - lrprc:    tau = -4.90, cannot reject UR; breaks 2001Q2, 2012Q1                    [12 lags]
+#   - lvol:     tau = -4.42, cannot reject UR; breaks 2008Q1 (GFC), 2013Q4 (Help-to-Buy) [13 lags]
+#   - r3:       tau = -2.75 (Model A), cannot reject UR; breaks 1984Q4, 1987Q1          [1 lag]
+#              NB: LM-minimising breaks cluster in mid-80s rate volatility, NOT GFC/ZLB/2022 splice.
+#                  Do not interpret these as policy dates.
+#   - lstock:   tau = -5.56, rejects UR at 10% (misses 5%; crit -5.74); breaks 1991Q3, 2010Q1  [2 lags]
+#              NB: rejection survives correct lag spec (-5.79@5% under fixed-14) -> robust, not a low-power
+#                  artefact. Near-trend-stationary; weak stochastic content (Denton-interpolated series).
+#   - lrcc:     tau = -4.73, cannot reject UR; breaks 2000Q4, 2020Q1 (COVID)           [4 lags]
+#
+# Synthesis: lrprc, lvol, r3, lrcc are clean I(1) — fail to reject UR across ADF + KPSS + ZA + LS.
+# lhstarts and lstock are NOT clean I(1): break-robust tests (ZA and/or LS) reject the unit root.
+# Both treated as I(1) for VECM comparability with Michalis (rank r=1), but they are the documented
+# mechanical source of rank > 1 in an unrestricted Johansen system — each contributes a spurious
+# cointegrating direction by loading ~1 on itself.
