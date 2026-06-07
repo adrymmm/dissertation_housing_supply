@@ -1,118 +1,126 @@
 library(urca)
 library(vars)
-library(strucchange)
+library(car)
 
-# Converting to timeseries
-eng_ts <- ts(eng_tf, start=c(1975,1), frequency=4)
+eng_ts    <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 time_axis <- time(eng_ts)
+dd <- function(yr) which.min(abs(time_axis - yr))
 
+# ------------------------------------------------------------
+# Integration order block - lhstarts I(0), lstock possible I(2)
+# Crit 5%:  ADF trend -3.43 | ADF drift -2.88 | KPSS tau 0.146
+# ------------------------------------------------------------
+int_order <- function(x) {
+  c(ADF_lvl  = ur.df(x,        type = "trend", selectlags = "AIC")@teststat[1],
+    KPSS_lvl = ur.kpss(x,      type = "tau")@teststat[1],
+    ADF_diff = ur.df(diff(x),  type = "drift", selectlags = "AIC")@teststat[1])
+}
+int_tab <- t(sapply(colnames(eng_tf), function(v) int_order(eng_tf[, v])))
+print(round(int_tab, 2))
+
+# Zivot-Andrews (break-robust) confirms lhstarts stationary; run individually
+
+# ------------------------------------------------------------
+# Seasonality check
+# ------------------------------------------------------------
 for (v in colnames(eng_tf)) {
-  q  <- factor(cycle(eng_ts[, v]))
-  m  <- lm(diff(eng_ts[, v]) ~ factor(cycle(eng_ts[, v])[-1]))  # on diffs, avoids trend
-  f  <- summary(m)$fstatistic
-  p  <- pf(f[1], f[2], f[3], lower.tail = FALSE)
-  cat(sprintf("%-9s seasonal F p-value = %.4f  %s\n",
-              v, p, ifelse(p < 0.05, "<- seasonal (NSA-like)", "smooth (SA-like)")))
+  m <- lm(diff(eng_ts[, v]) ~ factor(cycle(eng_ts[, v])[-1]))   # on diffs
+  f <- summary(m)$fstatistic
+  p <- pf(f[1], f[2], f[3], lower.tail = FALSE)
+  cat(sprintf("%-9s seasonal F p = %.4f  %s\n",
+              v, p, ifelse(p < 0.05, "<- seasonal", "smooth")))
 }
 
-# Find optimal structural breaks for a variable over time Bai & Perron (2003)
-bp_test <- breakpoints(eng_ts ~ 1, breaks = 1)
-summary(bp_test)
+# ------------------------------------------------------------
+# 3. Impulse dummies — genuine transitory shocks only
+#    (located from |std resid| > 3; step dummies would invalidate
+#     the standard trace critical values, so impulses are used.)
+#    GFC 2008Q3, COVID 2020Q2-Q3, post-2022 starts sawtooth (band-aid;
+#    real fix is in the data pipeline).
+# ------------------------------------------------------------
+final_dummies <- matrix(0, nrow(eng_ts), 4)
+colnames(final_dummies) <- c("gfc_2008Q3", "covid_2020Q2", "covid_2020Q3", "saw_2023Q2")
+final_dummies[dd(2008.50), 1] <- 1
+final_dummies[dd(2020.25), 2] <- 1
+final_dummies[dd(2020.50), 3] <- 1
+final_dummies[dd(2023.25), 4] <- 1
 
-cat("Break Date:", format(time_axis[133]), "\n")
+# ------------------------------------------------------------
+# Lag order - report BIC, pin K = 5 for benchmark comparability.
+# ------------------------------------------------------------
+pmax_eng <- floor(12 * (nrow(eng_tf) / 100)^(1/4))
+lagsel   <- VARselect(eng_tf, lag.max = pmax_eng, type = "both")
+print(lagsel$selection)          # report SC(n) = BIC in write-up
+K <- 5L                          # imposed (Michalis 2023)
 
-
-# Initialising dummy matrix
-final_dummies <- matrix(0, nrow = nrow(eng_ts), ncol = 1)
-
-# First Bai & Perron Break (2008 Q1)
-final_dummies[time_axis >= 2008.00, 1] <- 1
-colnames(final_dummies) <- c("shock_2008Q1")
-
-# Lag order var in levels BIC
-lagsel_eng <- VARselect(eng_tf, lag.max = pmax_eng, type = "both")
-print(lagsel_eng$selection)          
-K_eng <- lagsel_eng$selection["AIC(n)"]
-
-# Johansen trace test, restricted trend + centred seasonals
-jo_eng <- ca.jo(eng_tf,
-                type    = "trace",      
-                ecdet   = "none",      # unrestricted constant (Case 3)
-                K       = K_eng,        
-                spec    = "transitory", 
-                season  = 4,
-                dumvar = final_dummies)            
+# ------------------------------------------------------------
+# Johansen rank - 6-variable system (Case 3, season = 4)
+# ------------------------------------------------------------
+jo_eng <- ca.jo(eng_tf, type = "trace", ecdet = "none", K = K,
+                spec = "transitory", season = 4, dumvar = final_dummies)
 summary(jo_eng)
 
-# Eigen test
-jo_eng_eig <- ca.jo(eng_tf, type = "eigen", ecdet = "none",
-                    K = K_eng, spec = "transitory", season = 4,
-                    dumvar = final_dummies)
+jo_eng_eig <- ca.jo(eng_tf, type = "eigen", ecdet = "none", K = K,
+                    spec = "transitory", season = 4, dumvar = final_dummies)
 summary(jo_eng_eig)
+# -> trace selects r = 2 (r<=1 rejected)
 
-# Serial Correlation test
-var_eng <- vec2var(jo_eng, r = 1) 
-serial.test(var_eng, lags.pt = 16, type = "PT.asymptotic")
-serial.test(var_eng, lags.bg = 4, type = "BG")
-
-# Considerable serial correlation need to test with higher lag order
-
-# Testing serial correlation over K=2-6
-for (k in 2:12) {
-  jo_k  <- ca.jo(eng_tf, type="trace", ecdet="none", K=k, spec="transitory", season=4, dumvar=final_dummies)
-  var_k <- vec2var(jo_k, r = 2)          
-  pt    <- serial.test(var_k, lags.pt = 16, type = "PT.asymptotic")
-  cat(sprintf("K=%d  PT chi2=%.1f  df=%d  p=%.4g\n",
-              k, pt$serial$statistic, pt$serial$parameter, pt$serial$p.value))
-}
-# K=6 gives best result
-
-# Diagnostic: 5-var Johansen excluding lstock 
-eng_tf_5 <- eng_tf[, c("lhstarts","lrprc","lvol","r3","lrcc")]
-
-lagsel_5 <- VARselect(eng_tf_5, lag.max = pmax_eng, type = "both")
-print(lagsel_5$selection)
-K_5 <- as.integer(unname(lagsel_5$selection["AIC(n)"]))
-
-jo_5 <- ca.jo(eng_tf_5, type="trace", ecdet="none",
-              K=K_5, spec="transitory", season=4, dumvar = final_dummies)
+# ------------------------------------------------------------
+# Robustness - 5-variable system excluding lstock
+# ------------------------------------------------------------
+eng_tf_5 <- eng_tf[, c("lhstarts", "lrprc", "lvol", "r3", "lrcc")]
+jo_5 <- ca.jo(eng_tf_5, type = "trace", ecdet = "none", K = K,
+              spec = "transitory", season = 4, dumvar = final_dummies)
 summary(jo_5)
+# -> still r = 2: lstock is not the cause; lhstarts stationarity is.
 
-jo_5_eig <- ca.jo(eng_tf_5, type="eigen", ecdet="none",
-                  K=K_5, spec="transitory", season=4, dumvar = final_dummies)
-summary(jo_5_eig)
+# ------------------------------------------------------------
+#    Rank interpretation
+#    r = 2 = supply relation + lhstarts-stationarity direction.
+#    Optional formal check: test that the unit vector on lhstarts
+#    spans one cointegrating direction (partial beta restriction).
+#    NB verify the H/r setup for blrtest before quoting in the text.
+#      H <- ...                     # unit vector e_lhstarts + free directions
+#      summary(blrtest(jo_eng, H = H, r = 2))
+#    Primary model proceeds at r = 1 (the economic supply relation).
+# ------------------------------------------------------------
+var_eng <- vec2var(jo_eng, r = 1)
+var_5   <- vec2var(jo_5,   r = 1)
 
+# Residual diagnostics
+normality.test(var_eng); serial.test(var_eng, lags.pt = 16, type = "PT.adjusted")
+normality.test(var_5);   serial.test(var_5,   lags.pt = 16, type = "PT.adjusted")
 
+# Outlier locator used for dummies
+res       <- residuals(var_eng)
+res_dates <- tail(time(eng_ts), nrow(res))
+z   <- scale(res)
+idx <- which(abs(z) > 3, arr.ind = TRUE)
+print(data.frame(date = round(res_dates[idx[, 1]], 2),
+                 eq   = colnames(res)[idx[, 2]],
+                 z    = round(z[idx], 2))[order(-abs(z[idx])), ])
 
+# ------------------------------------------------------------
+#    Weak exogeneity (at r = 1)
+#    Individual t on the ect loading per equation (Wald-type;
+#    alrtest is avoided as it fails with dumvar present).
+# ------------------------------------------------------------
+vecm_u <- cajorls(jo_eng, r = 1)
+srlm   <- summary(vecm_u$rlm)
+t_lrprc <- srlm$`Response lrprc.d`$coefficients["ect1", "t value"]
+t_r3    <- srlm$`Response r3.d`$coefficients["ect1", "t value"]
+cat(sprintf("WE  lrprc: t = %.3f   r3: t = %.3f\n", t_lrprc, t_r3))
 
-# Formally checking deterministic terms
+# r3 t-value carries the rejection in joint test
 
-specs <- c(case2="const", case3="none", case4="trend")
-jo <- lapply(specs, function(e)
-  ca.jo(eng_tf, type="trace", ecdet=e, K=5, spec="transitory", season=4))
+b <- coef(vecm_u$rlm)["ect1", ]          # ect1 loading in every equation
+E <- residuals(vecm_u$rlm)               # residual matrix, cols = equations
+X <- model.matrix(vecm_u$rlm)
+g <- solve(crossprod(X))["ect1", "ect1"] # (X'X)^-1 element for ect1
 
-# tabulate trace stat vs 5% crit, by rank, for each case
-sapply(jo, function(z) z@teststat)          # trace stats
-sapply(jo, function(z) z@cval[,"5pct"])      # critical values
-
-# Define the number of observations (T) and variables (n)
-T <- nrow(eng_tf) - 5  # Total observations minus your lag length K=5
-n <- ncol(eng_tf)
-
-# Extract the eigenvalues from both models
-lambda_case2 <- jo$case2@lambda
-lambda_case3 <- jo$case3@lambda
-
-# Choose the rank (r) you want to test under. 
-# Based on your output, let's test at r = 1
-r <- 1
-
-# Calculating lr stat
-lr_stat <- T * sum(log((1 - lambda_case3[1:r]) / (1 - lambda_case2[1:r])))
-df <- r
-p_value <- pchisq(lr_stat, df = df, lower.tail = FALSE)
-
-# Print results
-cat("LR Statistic:", lr_stat, "\n")
-cat("Degrees of Freedom:", df, "\n")
-cat("P-value:", p_value, "\n")
+eqs <- c("lrprc.d", "r3.d")
+a <- b[eqs]
+S <- crossprod(E[, eqs]) / (nrow(E) - ncol(X))   # 2x2 residual cov (Sigma block)
+W <- as.numeric(t(a) %*% solve(g * S) %*% a)     # Sigma-aware joint Wald
+cat(sprintf("Joint WE: chi2(2) = %.3f  p = %.4f\n",
+            W, pchisq(W, df = 2, lower.tail = FALSE)))

@@ -1,27 +1,31 @@
 library(urca)
 library(vars)
+library(car)
 
-var_eng_k5 <- vec2var(jo_eng_k5, r = 1) 
+var_eng <- vec2var(jo_eng, r = 1) 
 
 # --Estimating VECM--
 # Serial Correlation test with K=5, r=1
-serial.test(var_eng_k5, lags.pt = 16, type = "PT.adjusted")
+serial.test(var_eng, lags.pt = 16, type = "PT.adjusted")
 
 # Extracting cointegrating vector
-cajorls(jo_eng_k5, r = 1)$beta  
+cajorls(jo_eng, r = 1)$beta  
   
 # Extracting ECM short run equation
-summary(cajorls(jo_eng_k5, r = 1)$rlm)
+summary(cajorls(jo_eng, r = 1)$rlm)
 
 #Normalising cointegrating vector on lhstarts
-beta_eng <- cajorls(jo_eng_k5, r = 1)$beta
+beta_eng <- cajorls(jo_eng, r = 1)$beta
 beta_eng / beta_eng["lhstarts.l1", ]   # normalise so lhstarts coef = 1, read elasticities directly
+elas <- -beta_eng / beta_eng["lhstarts.l1", ]
+elas["lhstarts.l1", ] <- 1    # keep the normalised 1
+elas
 
 # --Residual Diagnostics--
 # Diagnostics on K=5
-normality.test(var_eng_k5, multivariate.only = FALSE) # Reject normality for all - BAD
+normality.test(var_eng, multivariate.only = FALSE) # Reject normality for all - BAD
 
-arch.test(var_eng_k5, lags.multi = 5, multivariate.only = FALSE)
+arch.test(var_eng, lags.multi = 5, multivariate.only = FALSE)
 # ARCH effects detected in lvol, r3, lstock, multivariate - BAD
 
 # --Stability--
@@ -31,7 +35,7 @@ roots(var_lev)
 # All roots lie in unit circle- GOOD
 
 # Testing CUSUM on lhstarts
-res <- residuals(var_eng_k5)[, "resids of lhstarts"]   # match exact colname
+res <- residuals(var_eng)[, "resids of lhstarts"]   # match exact colname
 plot(cumsum(res), type = "l", main = "CUSUM — lhstarts resids")
 abline(h = 0, lty = 2)
 # Evidence for NARDL, coefficients for lhstarts unstable around downturns
@@ -39,7 +43,7 @@ abline(h = 0, lty = 2)
 # --Impulse Response Functions--
 # Orthogonalizing
 eng_tf2 <- eng_tf[, c("lrprc","lvol","r3","lstock","lrcc","lhstarts")]
-jo2  <- ca.jo(eng_tf2, type="trace", ecdet="trend", K=5, spec="transitory", season=4)
+jo2  <- ca.jo(eng_tf2, type="trace", ecdet="none", K=K_eng, spec="transitory", season=4)
 v2   <- vec2var(jo2, r = 1)
 irf2 <- irf(v2, impulse="lrprc", response="lhstarts", # shock to real price, supply response
             n.ahead=20, ortho=TRUE, boot=TRUE, runs=1000) # 5 years, ortho
@@ -54,14 +58,3 @@ plot(irf_cum)
 fevd_eng <- fevd(v2, n.ahead = 20)
 fevd_eng$lhstarts        # the row that matters: variance decomp OF starts
 plot(fevd_eng)           
-# --Weak exogeneity--
-# alpha restriction: zero rows = weakly exogenous to long-run relation
-# free: lhstarts, lvol, lstock, lrcc | restricted: lrprc, r3
-A_we <- matrix(c(1,0,0,0,
-                 0,0,0,0,
-                 0,1,0,0,
-                 0,0,0,0,
-                 0,0,1,0,
-                 0,0,0,1), nrow = 6, byrow = TRUE)
-summary(alrtest(jo_eng_k5, A = A_we, r = 1))
-# CANNOT REJECT -> GOOD! LPRC and R3 WEAKLY EXOGENOUS MEANING R=1 IS DEFENSIBLE

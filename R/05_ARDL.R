@@ -5,9 +5,8 @@ library(strucchange)
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 
 # Auto-select lag orders with AIC
-mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lstock + lrcc + trend(lhstarts),
-                 data = eng_ts,
-                 max_order = 4)
+mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lstock + lrcc,
+                 data = eng_ts, max_order = 4)
 
 # Top lag structures
 mod$top_orders
@@ -15,34 +14,33 @@ ardl_best <- mod$best_model
 summary(ardl_best)
 
 # Bounds test for cointegration (Pesaran-Shin-Smith F-bounds)
-bounds_f_test(ardl_best, case = 5)   # case 3 likely misspecified now testing case 5
+bounds_f_test(ardl_best, case = 3)
+bounds_t_test(ardl_best, case = 3)
 # Reject null of no cointegration
 
 # Reparametrize to the conditional ECM
-ardl_ecm <- recm(ardl_best, case = 5) 
+ardl_ecm <- recm(ardl_best, case = 3) 
 
 # Short-run ecm, speed of adjustment
-summary(ardl_ecm)                       
+summary(ardl_ecm)
+
 # Long-run elasticities
 multipliers(ardl_best)                
 
-# Prepare data for strucchange by adding a plain numeric trend column
-dat_clean <- as.data.frame(eng_ts)
-dat_clean$linear_trend <- 1:nrow(dat_clean)
+d <- ardl_best$model
+names(d) <- make.names(names(d))                 # "L(lhstarts, 1)" -> "L.lhstarts..1."
+f <- reformulate(names(d)[-1], response = names(d)[1])
 
-# CUSUM PLOT
-ardl_cusum <- efp(lhstarts ~ lrprc + lvol + r3 + lstock + lrcc + linear_trend, 
-                  data = dat_clean, 
-                  type = "Rec-CUSUM")
+# CUSUM
+cusum <- efp(f, data = d, type = "Rec-CUSUM")
+plot(cusum, main = "ARDL CUSUM"); sctest(cusum)
 
-# Draws the CUSUM process and boundaries automatically
-plot(ardl_cusum, main = "ARDL Cumulative Sum of Recursive Residuals (CUSUM)")
-
-
-# CUSUM SQUARED (CUSUMSQ) PLOT
-# Extract the true recursive residuals from estimated ardl_best model
-ardl_cusumsq <- efp(lhstarts ~ lrprc + lvol + r3 + lstock + lrcc + linear_trend, 
-                    data = dat_clean, 
-                    type = "OLS-CUSUM")
-
-plot(ardl_cusumsq, main = "ARDL CUSUM of Squares (CUSUMSQ)")
+# CUSUMSQ (recursive residuals -> cumulative squared)
+n <- length(rr); i <- 1:n
+s <- cumsum(rr^2)/sum(rr^2)
+c0 <- 0.10                      # 5% bound for n~190 — read exact value from a
+# CUSUMSQ table (Durbin 1969) or Edgerton-Wells (1994)
+plot(i/n, s, type="l", xlab="t/n", ylab="CUSUMSQ", main="ARDL CUSUMSQ")
+abline(0, 1, lty=2)             # expected line under stability
+lines(i/n, i/n + c0, col="red")
+lines(i/n, i/n - c0, col="red")

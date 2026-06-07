@@ -1,9 +1,5 @@
 library(urca)
 
-eng_tf <- df %>%
-  select(lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
-  as.matrix()
-
 pmax_eng <- floor(12 * (nrow(eng_tf) / 100)^(1/4))
 
 # Helper that extracts adf lags to use in ZA

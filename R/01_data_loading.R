@@ -13,7 +13,7 @@ df$Date <- as.Date(zoo::as.yearqtr(df$Date, format = "%YQ%q"))
 
 df <- df %>%
   mutate(
-    lrprc  = log(hprice / p_def),   # real house prices
+    lrprc  = log(hprice / cc_def),   # real house prices
     lrcc   = log(cc / cc_def),       # real construction costs
     lhstarts = log(starts),          # starts (no deflation needed)
     lvol   = log(vol),               # transactions volume
@@ -35,6 +35,10 @@ var_labels <- c(
   lstock   = "log Housing Stock",
   lrcc     = "log Real Construction Cost"
 )
+
+eng_tf <- df %>%
+  select(lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
+  as.matrix()
 
 plot_df$variable <- factor(plot_df$variable,
                            levels = names(var_labels),
