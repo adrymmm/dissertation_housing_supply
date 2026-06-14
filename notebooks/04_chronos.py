@@ -1,0 +1,92 @@
+"""
+Chronos zero-shot baseline for the housing-starts forecast horse race.
+Adds amazon/chronos-t5-small to the existing RW / VECM / ARDL comparison.
+
+Design: expanding-window, 1-step-ahead recursive pseudo-OOS forecasts of
+lhstarts. Chronos sees only the past of lhstarts (univariate, zero-shot) so
+the comparison is exactly structural-model-with-covariates vs pure pattern
+matcher. Metrics in log units to match the existing RMSEs (RW .437 / VECM
+.371 / ARDL .339). Diebold-Mariano (HLN-corrected) against VECM.
+
+    pip install chronos-forecasting scipy --break-system-packages
+
+ALIGNMENT CHECK: tune N_TEST / H until the printed RW RMSE reproduces your
+0.437. Once it matches, the harness is aligned with your R horse race and the
+Chronos / VECM numbers are directly comparable. Feed your R VECM forecasts via
+VECM_CSV (one row per holdout quarter, same dates) for the DM test.
+"""
+import numpy as np
+import pandas as pd
+import torch
+from chronos import ChronosPipeline
+from scipy.stats import t as tdist
+
+# --- config ---
+CSV         = "../data/python_master/england_master.csv"
+TARGET      = "starts"            # lhstarts = log(TARGET)
+N_TEST      = 20                  # holdout length in quarters
+H           = 1                   # forecast horizon (recursive)
+NUM_SAMPLES = 100
+MODEL       = "amazon/chronos-t5-small"
+VECM_CSV    = None               # e.g. "vecm_fcst.csv" with column lhstarts_hat
+
+# --- data ---
+df = pd.read_csv(CSV).dropna(subset=[TARGET])
+# drop a trailing partial quarter (2026Q1) if your last row is incomplete:
+# df = df.iloc[:-1]
+y = np.log(df[TARGET].to_numpy(dtype=float))
+n = len(y)
+assert N_TEST + 10 < n, "holdout too long for series"
+test_idx = np.arange(n - N_TEST, n)
+
+# --- chronos: expanding window, h-step recursive ---
+pipe = ChronosPipeline.from_pretrained(MODEL, device_map="cpu",
+                                       torch_dtype=torch.float32)
+
+chronos_pred = np.empty(N_TEST)
+rw_pred      = np.empty(N_TEST)
+for i, t in enumerate(test_idx):
+    ctx = torch.tensor(y[: t - H + 1], dtype=torch.float32)   # data up to origin
+    fc = pipe.predict(ctx, prediction_length=H, num_samples=NUM_SAMPLES)  # [1,S,H]
+    chronos_pred[i] = np.median(fc[0].numpy(), axis=0)[H - 1]  # point = sample median
+    rw_pred[i]      = y[t - H]                                 # naive last-value anchor
+
+actual = y[test_idx]
+
+
+# --- metrics & DM ---
+def metrics(a, p):
+    e = a - p
+    return np.sqrt(np.mean(e ** 2)), np.mean(np.abs(e))
+
+
+def dm_test(e1, e2, h=H, power=2):
+    """H0: equal accuracy. Loss = |e|^power. stat>0 => model-1 worse.
+    HLN small-sample correction; compared to t(n-1)."""
+    d = np.abs(e1) ** power - np.abs(e2) ** power
+    nn = len(d)
+    dbar = d.mean()
+    var = np.sum((d - dbar) ** 2) / nn                  # gamma0
+    for lag in range(1, h):                             # HAC up to h-1 (none for h=1)
+        var += 2 * np.sum((d[lag:] - dbar) * (d[:-lag] - dbar)) / nn
+    if var <= 0:
+        return np.nan, np.nan
+    stat = dbar / np.sqrt(var / nn)
+    stat *= np.sqrt((nn + 1 - 2 * h + h * (h - 1) / nn) / nn)
+    return stat, 2 * tdist.cdf(-abs(stat), df=nn - 1)
+
+
+print(f"holdout: last {N_TEST} quarters, h={H}, n_train_start={n - N_TEST}\n")
+for name, p in [("naive RW", rw_pred), ("Chronos", chronos_pred)]:
+    rmse, mae = metrics(actual, p)
+    print(f"{name:10s}  RMSE={rmse:.4f}  MAE={mae:.4f}")
+
+s, pv = dm_test(actual - chronos_pred, actual - rw_pred)
+print(f"\nDM Chronos vs RW   stat={s:+.3f}  p={pv:.3f}")
+
+if VECM_CSV:
+    vhat = pd.read_csv(VECM_CSV)["lhstarts_hat"].to_numpy(dtype=float)[-N_TEST:]
+    rmse, mae = metrics(actual, vhat)
+    print(f"\nVECM       RMSE={rmse:.4f}  MAE={mae:.4f}  (from {VECM_CSV})")
+    s, pv = dm_test(actual - chronos_pred, actual - vhat)
+    print(f"DM Chronos vs VECM stat={s:+.3f}  p={pv:.3f}   (stat>0 => Chronos worse)")
