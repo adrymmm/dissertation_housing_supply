@@ -6,10 +6,7 @@ eng_ts    <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 time_axis <- time(eng_ts)
 dd <- function(yr) which.min(abs(time_axis - yr))
 
-# ------------------------------------------------------------
-# Integration order block - lhstarts I(0), lstock possible I(2)
-# Crit 5%:  ADF trend -3.43 | ADF drift -2.88 | KPSS tau 0.146
-# ------------------------------------------------------------
+# Integration order
 int_order <- function(x) {
   c(ADF_lvl  = ur.df(x,        type = "trend", selectlags = "AIC")@teststat[1],
     KPSS_lvl = ur.kpss(x,      type = "tau")@teststat[1],
@@ -20,9 +17,7 @@ print(round(int_tab, 2))
 
 # Zivot-Andrews (break-robust) confirms lhstarts stationary; run individually
 
-# ------------------------------------------------------------
 # Seasonality check
-# ------------------------------------------------------------
 for (v in colnames(eng_tf)) {
   m <- lm(diff(eng_ts[, v]) ~ factor(cycle(eng_ts[, v])[-1]))   # on diffs
   f <- summary(m)$fstatistic
@@ -31,13 +26,7 @@ for (v in colnames(eng_tf)) {
               v, p, ifelse(p < 0.05, "<- seasonal", "smooth")))
 }
 
-# ------------------------------------------------------------
-# 3. Impulse dummies — genuine transitory shocks only
-#    (located from |std resid| > 3; step dummies would invalidate
-#     the standard trace critical values, so impulses are used.)
-#    GFC 2008Q3, COVID 2020Q2-Q3, post-2022 starts sawtooth (band-aid;
-#    real fix is in the data pipeline).
-# ------------------------------------------------------------
+# Impulse dummies - genuine transitory shocks only
 final_dummies <- matrix(0, nrow(eng_ts), 4)
 colnames(final_dummies) <- c("gfc_2008Q3", "covid_2020Q2", "covid_2020Q3", "saw_2023Q2")
 final_dummies[dd(2008.50), 1] <- 1
@@ -45,17 +34,13 @@ final_dummies[dd(2020.25), 2] <- 1
 final_dummies[dd(2020.50), 3] <- 1
 final_dummies[dd(2023.25), 4] <- 1
 
-# ------------------------------------------------------------
-# Lag order - report BIC, pin K = 5 for benchmark comparability.
-# ------------------------------------------------------------
+# Lag order
 pmax_eng <- floor(12 * (nrow(eng_tf) / 100)^(1/4))
 lagsel   <- VARselect(eng_tf, lag.max = pmax_eng, type = "both")
-print(lagsel$selection)          # report SC(n) = BIC in write-up
+print(lagsel$selection)          # report SC(n) = BIC 
 K <- 5L                          # imposed (Michalis 2023)
 
-# ------------------------------------------------------------
 # Johansen rank - 6-variable system (Case 3, season = 4)
-# ------------------------------------------------------------
 jo_eng <- ca.jo(eng_tf, type = "trace", ecdet = "none", K = K,
                 spec = "transitory", season = 4, dumvar = final_dummies)
 summary(jo_eng)
@@ -65,9 +50,7 @@ jo_eng_eig <- ca.jo(eng_tf, type = "eigen", ecdet = "none", K = K,
 summary(jo_eng_eig)
 # -> trace selects r = 2 (r<=1 rejected)
 
-# ------------------------------------------------------------
 # Robustness - 5-variable system excluding lstock
-# ------------------------------------------------------------
 eng_tf_5 <- eng_tf[, c("lhstarts", "lrprc", "lvol", "r3", "lrcc")]
 jo_5 <- ca.jo(eng_tf_5, type = "trace", ecdet = "none", K = K,
               spec = "transitory", season = 4, dumvar = final_dummies)
@@ -100,11 +83,7 @@ print(data.frame(date = round(res_dates[idx[, 1]], 2),
                  eq   = colnames(res)[idx[, 2]],
                  z    = round(z[idx], 2))[order(-abs(z[idx])), ])
 
-# ------------------------------------------------------------
 #    Weak exogeneity (at r = 1)
-#    Individual t on the ect loading per equation (Wald-type;
-#    alrtest is avoided as it fails with dumvar present).
-# ------------------------------------------------------------
 vecm_u <- cajorls(jo_eng, r = 1)
 srlm   <- summary(vecm_u$rlm)
 t_lrprc <- srlm$`Response lrprc.d`$coefficients["ect1", "t value"]
