@@ -26,7 +26,7 @@ plot_df <- df %>%
   select(Date, lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
   pivot_longer(-Date, names_to = "variable", values_to = "value")
 
-# --- Labels ---
+# Labels
 var_labels <- c(
   lhstarts = "log Starts",
   lrprc    = "log Real House Price",
