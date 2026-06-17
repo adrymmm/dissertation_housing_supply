@@ -1,24 +1,3 @@
-"""
-Aggregate per-model one-step-ahead forecasts and run Diebold-Mariano tests.
-
-Run this AFTER 04_chronos.py, 05_ARRF.py, 06_LSTM.py (Python) and the R
-VECM/ARDL/NARDL script have each produced their forecast output in
-../data/outputs/forecasts/. It merges every model's forecasts onto a common
-Quarter key, checks the windows actually overlap before computing anything,
-cross-checks that the R-side and Python-side RW benchmarks agree (they're
-both just "next quarter = this quarter's actual" on the same series -- if
-they don't match, something is misaligned between the two halves of the
-pipeline), then prints an accuracy table and runs HLN-corrected
-Diebold-Mariano tests: every model against RW, plus a head-to-head between
-your best structural model and your best ML model.
-
-Two source formats are handled:
-  - Python scripts: one narrow CSV per model, columns (Quarter, <pred>, actual),
-    Quarter already a "2010Q1"-style string.
-  - R script: one wide CSV (h1_forecasts.csv), columns (date, actual, rw, ar,
-    vecm, ardl, nardl), date an R Date string ("2010-01-01") that needs
-    converting to the same "2010Q1" key before it can be merged with the rest.
-"""
 import numpy as np
 import pandas as pd
 from scipy.stats import t as tdist
@@ -42,10 +21,9 @@ SOURCES = [
 # canonical persistence benchmark used in the accuracy table and DM tests.
 RW_BENCHMARK = "RW_R"
 
-# Update these once you know which model actually has the lowest RMSE in
-# each camp -- this pairing is just a starting guess.
-STRUCTURAL_BEST = "VECM"
-ML_BEST = "LSTM"
+
+STRUCTURAL_BEST = "NARDL"
+ML_BEST = "ARRF"
 
 
 def dm_test(e1, e2, h=1, power=2):
@@ -173,3 +151,5 @@ if STRUCTURAL_BEST in errors and ML_BEST in errors:
 else:
     print(f"\n(Skipping structural-vs-ML head-to-head -- '{STRUCTURAL_BEST}' or "
           f"'{ML_BEST}' not in {list(errors.keys())}.)")
+
+

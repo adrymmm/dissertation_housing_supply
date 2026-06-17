@@ -16,7 +16,7 @@ eng_df <- na.omit(eng_df)
 eng_df <- eng_df[is.finite(rowSums(eng_df)), ]
 
 # Partial sum decomposition
-nl_vars <- c("lrprc", "lrcc", "r3")
+nl_vars <- c("lrprc", "lrcc", "r3", "lvol", "lstock")
 
 for (var in nl_vars) {
   d <- c(0, diff(eng_df[[var]]))
@@ -31,11 +31,11 @@ run_nardl <- function(x) {
   dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2")
   f    <- as.formula(paste("lhstarts ~", paste(rhs, collapse = " + "),
                            "|", paste(dum, collapse = " + ")))
-  
+
   nardl_fit <- auto_ardl(f, data = eng_df, max_order = 4)$best_model
   uecm_fit  <- uecm(nardl_fit)
-  V         <- vcovHC(uecm_fit, type = "HC3")
-  
+  V         <- vcovHC(uecm_fit, type = "HC1")
+
   cf <- coef(uecm_fit); k <- length(cf)
   contrast <- function(pos, neg) {
     v <- setNames(numeric(k), names(cf))
@@ -47,7 +47,7 @@ run_nardl <- function(x) {
     if (!length(pos) || !length(neg) || anyNA(cf[c(pos, neg)])) return(NA)
     linearHypothesis(uecm_fit, contrast(pos, neg), rhs = 0, vcov. = V)
   }
-  
+
   xpos <- paste0(x, "_pos"); xneg <- paste0(x, "_neg")
   allp <- grep(xpos, names(cf), value = TRUE, fixed = TRUE)
   alln <- grep(xneg, names(cf), value = TRUE, fixed = TRUE)
@@ -55,7 +55,7 @@ run_nardl <- function(x) {
   lr_n <- alln[!grepl("^d\\(", alln)]
   sr_p <- grep("^d\\(", allp, value = TRUE)
   sr_n <- grep("^d\\(", alln, value = TRUE)
-  
+
   res <- residuals(nardl_fit)
   list(
     fit      = nardl_fit,
@@ -72,8 +72,8 @@ run_nardl <- function(x) {
   )
 }
 
-out <- lapply(c("lrprc", "lrcc", "r3"), run_nardl)
-names(out) <- c("lrprc", "lrcc", "r3")
+out <- lapply(c("lrprc", "lrcc", "r3", "lvol", "lstock"), run_nardl)
+names(out) <- c("lrprc", "lrcc", "r3", "lvol", "lstock")
 
 # Summary table
 cell <- function(z, col) if (inherits(z, "anova")) z[2, col] else NA

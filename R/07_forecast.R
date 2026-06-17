@@ -10,7 +10,7 @@ library(ARDL)
 y_name   <- "lhstarts"
 K        <- 5  # VECM Lag order
 eval0    <- (2010 - 1975) * 4 + 1   # Row index of 2010Q1
-nardl_var <- "lrprc"
+nardl_var <- "lrcc"
 
 # Convert to df for slicing to work
 eng_df <- as.data.frame(eng_tf)
@@ -48,11 +48,13 @@ neg  <- cumsum(ifelse(is.na(d), 0, pmin(d, 0)))
 # Other regressors other than decomposed
 rest <- setdiff(names(qx), nardl_var)
 # New lag order on decomposed variable - both neg/pos get same lag
-qx_n <- c(lrprc_pos = qx[[nardl_var]], lrprc_neg = qx[[nardl_var]], qx[rest])
-
-nardl_df  <- eng_df
-nardl_df$lrprc_pos <- pos
-nardl_df$lrprc_neg <- neg
+pos_name <- paste0(nardl_var, "_pos")
+neg_name <- paste0(nardl_var, "_neg")
+qx_n <- setNames(c(qx[[nardl_var]], qx[[nardl_var]], qx[rest]),
+                 c(pos_name, neg_name, rest))
+nardl_df <- eng_df
+nardl_df[[pos_name]] <- pos
+nardl_df[[neg_name]] <- neg
 
 # Creates formula lh_starts ~ nardl_pos + nardl_neg + ...
 nardl_frm <- reformulate(names(qx_n), response = y_name)
