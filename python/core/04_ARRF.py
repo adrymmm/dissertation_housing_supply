@@ -4,7 +4,8 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
-df = pd.read_csv('data/python_master/england_master.csv')
+MASTER_DIR = "../../data/python_master"
+df = pd.read_csv(f'{MASTER_DIR}/england_master.csv')
 df.rename(columns={'Unnamed: 0': 'Quarter'}, inplace=True)
 df['Quarter'] = pd.PeriodIndex(df['Quarter'], freq='Q')
 df.set_index('Quarter', inplace=True)

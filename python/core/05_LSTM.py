@@ -10,7 +10,8 @@ np.random.seed(42)
 keras.utils.set_random_seed(42)
 
 # --- load + transform: single cc_def deflator for both real series ---
-df_raw = pd.read_csv("data/python_master/england_master.csv")
+MASTER_DIR = "../../data/python_master"
+df_raw = pd.read_csv(f"{MASTER_DIR}/england_master.csv")
 print(df_raw.columns.tolist())
 # Rename columns to match R script
 df_raw = df_raw.rename(columns={
@@ -160,6 +161,5 @@ out = pd.DataFrame({
 # (re-running early-stopped training 64 times is expensive and adds its own
 # instability); disclosed explicitly in the methods section rather than left
 # implicit.
-os.makedirs("data/outputs/forecasts", exist_ok=True)
 out.to_csv("data/outputs/forecasts/lstm_forecasts.csv", index=False)
 print("Saved lstm_forecasts.csv")
