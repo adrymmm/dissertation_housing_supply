@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import t as tdist
+import matplotlib.pyplot as plt
 
 # IMPORTANT: RUN 07_forecast.R first for h1_forecasts.csv
 
@@ -170,3 +171,36 @@ excov_mask = ~merged["Quarter"].isin(EXCLUDE_QUARTERS).to_numpy()
 
 errors = report(full_mask, "Full sample")
 excov_errors = report(excov_mask, "Excluding COVID (2020Q2-Q3)")
+
+def plot_rmse_bar(errs, benchmark=RW_BENCHMARK, title=""):
+    rmse = {n: np.sqrt(np.mean(e ** 2)) for n, e in errs.items()}
+    order = sorted(rmse, key=rmse.get)  # ascending, best first
+
+    pvals = {}
+    for n in order:
+        if n == benchmark:
+            continue
+        _, pv = dm_test(errs[n], errs[benchmark])
+        pvals[n] = pv
+
+    colors = ['#2E7D32' if n.startswith('Ensemble') else '#9E9E9E' for n in order]
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    bars = ax.bar(order, [rmse[n] for n in order], color=colors)
+
+    for bar, n in zip(bars, order):
+        h = bar.get_height()
+        star = "*" if pvals.get(n, 1) < 0.05 else ""
+        ax.text(bar.get_x() + bar.get_width() / 2, h + 0.003, f"{h:.4f}{star}",
+                ha='center', va='bottom', fontsize=9)
+
+    ax.set_ylabel("RMSE")
+    ax.set_title(title)
+    ax.set_xticklabels(order, rotation=30, ha='right')
+    fig.tight_layout()
+    fig.savefig(f"data/outputs/figures/{title.replace(' ', '_').lower()}.png", dpi=200)
+    plt.show()
+
+
+plot_rmse_bar(errors, title="Forecast RMSE - Full Sample")
+plot_rmse_bar(excov_errors, title="Forecast RMSE - Excluding COVID")
