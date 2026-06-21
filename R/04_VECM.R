@@ -38,30 +38,31 @@ plot(cumsum(res), type = "l", main = "CUSUM — lhstarts resids")
 abline(h = 0, lty = 2)
 # Evidence for NARDL, coefficients for lhstarts unstable around downturns
 
-# Impulse Response Functions
-eng_tf2 <- eng_tf[, c("lrprc","lvol","r3","lstock","lrcc","lhstarts")]
-jo2  <- ca.jo(eng_tf2, type="trace", ecdet="none", K=5, spec="transitory",
-              season=4, dumvar=final_dummies)
-
-v2   <- vec2var(jo2, r = 1)
-irf2 <- irf(v2,
-            impulse="lrprc",
-            response="lhstarts", # shock to real price, supply response
-            n.ahead=20, # 5 years
-            ortho=TRUE, # ortho
-            boot=TRUE,
-            runs=1000) #
-plot(irf2)
-
-# Cumulative response = long-run supply effect of a price shock
-irf_cum <- irf(v2,
-               impulse = "lrprc",
-               response = "lhstarts",
-               n.ahead = 20,
-               cumulative = TRUE,
-               boot = TRUE,
-               runs = 500)
-plot(irf_cum)
+# # Impulse Response Functions
+# UNCOMMENT TO USE THEY TAKE TIME TO RUN
+# eng_tf2 <- eng_tf[, c("lrprc","lvol","r3","lstock","lrcc","lhstarts")]
+# jo2  <- ca.jo(eng_tf2, type="trace", ecdet="none", K=5, spec="transitory",
+#               season=4, dumvar=final_dummies)
+# 
+# v2   <- vec2var(jo2, r = 1)
+# irf2 <- irf(v2,
+#             impulse="lrprc",
+#             response="lhstarts", # shock to real price, supply response
+#             n.ahead=20, # 5 years
+#             ortho=TRUE, # ortho
+#             boot=TRUE,
+#             runs=1000) #
+# plot(irf2)
+# 
+# # Cumulative response = long-run supply effect of a price shock
+# irf_cum <- irf(v2,
+#                impulse = "lrprc",
+#                response = "lhstarts",
+#                n.ahead = 20,
+#                cumulative = TRUE,
+#                boot = TRUE,
+#                runs = 500)
+# plot(irf_cum)
 
 # FEVD 
 fevd_eng <- fevd(v2, n.ahead = 20)
