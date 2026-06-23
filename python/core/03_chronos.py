@@ -14,6 +14,9 @@ ALIGNMENT CHECK: tune N_TEST / H until the printed RW RMSE reproduces your
 0.437. Once it matches, the harness is aligned with your R horse race and the
 Chronos / VECM numbers are directly comparable. Feed your R VECM forecasts via
 VECM_CSV (one row per holdout quarter, same dates) for the DM test.
+
+NOTE: I ran this on KAGGLE
+
 """
 import os
 import numpy as np
@@ -23,7 +26,8 @@ from chronos import ChronosPipeline
 from scipy.stats import t as tdist
 
 # --- config ---
-CSV         = "data/python_master/england_master.csv"
+MASTER_DIR = "../../data/python_master"
+CSV         = f"{MASTER_DIR}/england_master.csv"
 TARGET      = "starts"            # lhstarts = log(TARGET)
 H           = 1                   # forecast horizon (recursive)
 NUM_SAMPLES = 100
