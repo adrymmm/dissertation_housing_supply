@@ -11,3 +11,6 @@ diff.txt
 ~$*.xlsx
 ~$*.xls
 ~$*.csv
+
+R/models/
+.~lock.*#
