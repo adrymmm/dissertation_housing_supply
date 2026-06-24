@@ -1,6 +1,13 @@
 library(urca)
 library(ARDL)
 
+jo_eng    <- readRDS("R/models/jo_eng.rds")
+ardl_best <- readRDS("R/models/ardl_best.rds")
+ardl_ecm  <- readRDS("R/models/ardl_ecm.rds")
+nardl_lrcc <- readRDS("R/models/nardl_lrcc.rds")
+sym_tbl <- readRDS("R/models/sym_tbl.rds")
+out <- list(lrcc = nardl_lrcc)
+
 # --- VECM ---
 cj <- cajorls(jo_eng, r = 1)   # call once, reuse
 

@@ -2,6 +2,7 @@ library(ARDL)
 library(car)
 library(sandwich)
 
+eng_tf <- readRDS("R/models/eng_tf.rds")
 eng_df <- as.data.frame(eng_tf)
 
 # Creating impulse dummies
@@ -87,3 +88,7 @@ sym_tbl <- data.frame(
   row.names = NULL
 )
 sym_tbl
+
+# Saving fitted models
+saveRDS(out[["lrcc"]], "R/models/nardl_lrcc.rds")
+saveRDS(sym_tbl, "R/models/sym_tbl.rds")

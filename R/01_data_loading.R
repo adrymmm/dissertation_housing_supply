@@ -22,9 +22,7 @@ df <- df %>%
   )
 
 # Long format for plot
-plot_df <- df %>%
-  select(Date, lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
-  pivot_longer(-Date, names_to = "variable", values_to = "value")
+plot_df <- df[, c("Date", "lhstarts", "lrprc", "lvol", "r3", "lstock", "lrcc")]
 
 # Labels
 var_labels <- c(
@@ -37,12 +35,12 @@ var_labels <- c(
 )
 
 eng_tf <- df %>%
-  select(lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
+  dplyr::select(lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
   as.matrix()
 
-plot_df$variable <- factor(plot_df$variable,
-                           levels = names(var_labels),
-                           labels = var_labels)
+plot_df <- df %>%
+  dplyr::select(Date, lhstarts, lrprc, lvol, r3, lstock, lrcc) %>%
+  pivot_longer(-Date, names_to = "variable", values_to = "value")
 
 # Plotting
 ggplot(plot_df, aes(x = Date, y = value)) +
@@ -52,3 +50,7 @@ ggplot(plot_df, aes(x = Date, y = value)) +
        x = NULL, y = NULL) +
   theme_minimal(base_size = 11) +
   theme(strip.text = element_text(face = "bold"))
+
+# Saving tf and df
+saveRDS(eng_tf, "R/models/eng_tf.rds")
+saveRDS(df, "R/models/eng_df.rds")

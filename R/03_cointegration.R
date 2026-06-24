@@ -2,6 +2,8 @@ library(urca)
 library(vars)
 library(car)
 
+eng_tf <- readRDS("R/models/eng_tf.rds")
+
 eng_ts    <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 time_axis <- time(eng_ts)
 dd <- function(yr) which.min(abs(time_axis - yr))
@@ -103,3 +105,7 @@ S <- crossprod(E[, eqs]) / (nrow(E) - ncol(X))   # 2x2 residual cov (Sigma block
 W <- as.numeric(t(a) %*% solve(g * S) %*% a)     # Sigma-aware joint Wald
 cat(sprintf("Joint WE: chi2(2) = %.3f  p = %.4f\n",
             W, pchisq(W, df = 2, lower.tail = FALSE)))
+
+saveRDS(jo_eng, "R/models/jo_eng.rds")
+saveRDS(var_eng, "R/models/var_eng.rds")
+saveRDS(final_dummies, "R/models/final_dummies.rds")

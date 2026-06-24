@@ -1,4 +1,5 @@
 library(urca)
+eng_tf <- readRDS("R/models/eng_tf.rds")
 
 pmax_eng <- floor(12 * (nrow(eng_tf) / 100)^(1/4))
 

@@ -1,6 +1,8 @@
 library(ARDL)
 library(strucchange)
 
+eng_tf <- readRDS("R/models/eng_tf.rds")
+
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 
 # Creating impulse dummies
@@ -67,3 +69,7 @@ bp  <- breakpoints(ect ~ 1, h = 0.15)
 print(sctest(oc))     # report this p-value
 summary(bp)           # "Optimal number of breakpoints: 0"
 if (length(na.omit(breakdates(bp)))) confint(bp)
+
+# Saving fitted models
+saveRDS(ardl_best, "R/models/ardl_best.rds")
+saveRDS(ardl_ecm, "R/models/ardl_ecm.rds")
