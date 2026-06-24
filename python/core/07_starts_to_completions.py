@@ -5,7 +5,6 @@ import statsmodels.formula.api as smf
 from statsmodels.stats.diagnostic import breaks_cusumolsresid
 import json
 
-
 # Define the two data file paths
 housebuilding_file = "data/raw/starts/indicatorsofukhousebuilding.xlsx"
 
@@ -115,5 +114,3 @@ bridge_params = {
 
 with open("data/processed/bridge_params.json", "w") as f:
     json.dump(bridge_params, f, indent=2)
-
-print(df.tail())
