@@ -1,8 +1,8 @@
 library(ARDL)
 library(strucchange)
 
+# IMPORTANT HOUSING STOCK IS DROPPED
 eng_tf <- readRDS("R/models/eng_tf.rds")
-
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 
 # Creating impulse dummies
@@ -13,11 +13,13 @@ D[dd(2008.50),1] <- 1
 D[dd(2020.25),2] <- 1
 D[dd(2020.50),3] <- 1
 D[dd(2023.25),4] <- 1
-eng_ts <- ts(cbind(as.matrix(eng_tf), D), start = c(1975,1), frequency = 4)
 
-mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lstock + lrcc |
-                   d08Q3 + d20Q2 + d20Q3 + d23Q2,
-                 data = eng_ts, max_order = 4)
+# Converting to zoo for forecast
+eng_zoo <- as.zooreg(ts(cbind(as.matrix(eng_tf), D), start = c(1975, 1), frequency = 4))
+
+mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lrcc | d08Q3 + d20Q2 + d20Q3 + d23Q2,
+                 data = eng_zoo, max_order = 4)
+
 # Top lag structures
 mod$top_orders
 ardl_best <- mod$best_model
@@ -28,11 +30,8 @@ bounds_f_test(ardl_best, case = 3)
 bounds_t_test(ardl_best, case = 3)
 # Reject null of no cointegration
 
-# Reparametrize to the conditional ECM
-ardl_ecm <- recm(ardl_best, case = 3) 
-
-# Short-run ecm, speed of adjustment
-summary(ardl_ecm)
+ardl_ecm <- recm(ardl_best, case = 3) # Reparametrize to the conditional ECM
+summary(ardl_ecm) # Short-run ecm, speed of adjustment
 
 # Long-run elasticities
 multipliers(ardl_best)                
@@ -69,6 +68,7 @@ bp  <- breakpoints(ect ~ 1, h = 0.15)
 print(sctest(oc))     # report this p-value
 summary(bp)           # "Optimal number of breakpoints: 0"
 if (length(na.omit(breakdates(bp)))) confint(bp)
+
 
 # Saving fitted models
 saveRDS(ardl_best, "R/models/ardl_best.rds")
