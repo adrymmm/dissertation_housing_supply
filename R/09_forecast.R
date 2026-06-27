@@ -1,56 +1,46 @@
 library(ARDL)
 library(zoo)
 
-master <- read.csv("data/python_master/OBR/obr_scenario.csv")
-master$period <- as.yearqtr(master$period, format = "%YQ%q")
-master$X <- NULL
-names(master)[names(master) == "lhprice"] <- "lrprc"
+model <- readRDS("R/models/ardl_best.rds")
+obr <- read.csv("data/python_master/OBR/obr_scenario.csv")
 
-eng_df    <- readRDS("R/models/eng_df.rds")
-ardl_best <- readRDS("R/models/ardl_best.rds")
+# Dropping overlap row
+obr <- obr[obr$period > "2025Q4", ]
+obr$d08Q3 <- 0; obr$d20Q2 <- 0; obr$d20Q3 <- 0; obr$d23Q2 <- 0   # no future shocks
 
-hist   <- data.frame(period = as.yearqtr(eng_df$Date), lhstarts = eng_df$lhstarts)
-master <- merge(master, hist, by = "period", all.x = TRUE)
-master <- master[order(master$period), ]
-rownames(master) <- NULL
+# Last in-sample lrcc level
+eng <- as.data.frame(readRDS("R/models/eng_tf.rds"))
+lrcc_last <- as.numeric(tail(eng$lrcc, 1))
 
-# dummies enter contemporaneously only; zero in the forecast period
-fc_idx <- which(is.na(master$lhstarts))
-master[fc_idx, c("d08Q3","d20Q2","d20Q3","d23Q2")] <- 0
+# ARDL forecast
+ardl_model <- readRDS("R/models/ardl_best.rds")
+ardl_nd <- obr[, c("lrprc","lvol","r3","lrcc","d08Q3","d20Q2","d20Q3","d23Q2")]
+ardl_nd_zoo <- zooreg(ardl_nd, start = as.yearqtr("2026 Q1"), frequency = 4)
+ardl_fc <- predict(ardl_model, ardl_nd_zoo)
 
-# parse each coef name into (var, lag): "(Intercept)", bare = lag 0, L(var, k)
-co <- coef(ardl_best)
-trm <- lapply(names(co), function(nm) {
-  if (nm == "(Intercept)") return(list(var = "(Intercept)", lag = 0L))
-  m <- regmatches(nm, regexec("^L\\(\\s*([^,]+),\\s*([0-9]+)\\s*\\)$", nm))[[1]]
-  if (length(m) == 3) list(var = trimws(m[2]), lag = as.integer(m[3]))
-  else                list(var = nm, lag = 0L)
-})
+# NARDL forecast
+nardl_model <- readRDS("R/models/nardl_lrcc.rds")$fit
+d_in <- nardl_model$data
+pos_last <- as.numeric(tail(d_in[, "lrcc_pos"], 1))
+neg_last <- as.numeric(tail(d_in[, "lrcc_neg"], 1))
 
-# recursive forecast: write each yhat back so later lags pick it up
-for (t in fc_idx) {
-  yhat <- 0
-  for (k in seq_along(co)) {
-    v <- trm[[k]]$var; lg <- trm[[k]]$lag
-    if (v == "(Intercept)") { yhat <- yhat + co[k]; next }
-    yhat <- yhat + co[k] * master[[v]][t - lg]
-  }
-  master$lhstarts[t] <- yhat
-}
-
-fc_ardl <- master$lhstarts[fc_idx]
-
-# the forecast values, with dates attached
-master[fc_idx, c("period", "lhstarts")]
-
-# back out of logs to actual starts (per quarter)
-data.frame(period = master$period[fc_idx],
-           starts = exp(master$lhstarts[fc_idx]))
-
-# annual totals (sum of quarterly levels)
-aggregate(exp(master$lhstarts[fc_idx]),
-          by = list(year = floor(as.numeric(master$period[fc_idx]))),
-          FUN = sum)
+# OBR lrcc growth into partial sums
+dlrcc <- diff(c(lrcc_last, obr$lrcc))
+obr$lrcc_pos <- pos_last + cumsum(pmax(dlrcc, 0))
+obr$lrcc_neg <- neg_last + cumsum(pmin(dlrcc, 0))
 
 
-## NEED TO DROP LSTOCK OR IDK 
+need <- setdiff(colnames(nardl_model$data), "lhstarts")
+nardl_nd <- obr[, need]
+nardl_nd_zoo <- zooreg(nardl_nd, start = as.yearqtr("2026 Q1"), frequency = 4)
+nardl_fc <- predict(nardl_model, nardl_nd_zoo)
+
+out <- data.frame(
+  period      = obr$period,
+  ardl_log    = ardl_fc,
+  ardl_starts = exp(ardl_fc),
+  nardl_log   = nardl_fc,
+  nardl_starts = exp(nardl_fc)
+)
+
+write.csv(out, "data/outputs/forecasts/obr_scenario_forecasts.csv", row.names = FALSE)

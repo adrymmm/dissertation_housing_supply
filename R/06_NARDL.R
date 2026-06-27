@@ -3,7 +3,8 @@ library(car)
 library(sandwich)
 
 eng_tf <- readRDS("R/models/eng_tf.rds")
-eng_df <- as.data.frame(eng_tf)
+eng_zoo <- as.zooreg(ts(eng_tf, start = c(1975, 1), frequency = 4))
+eng_df  <- as.data.frame(eng_zoo)
 
 # Creating impulse dummies
 ta <- time(ts(eng_df, start = c(1975,1), frequency = 4))
@@ -25,15 +26,18 @@ for (var in nl_vars) {
   eng_df[[paste0(var, "_neg")]] <- cumsum(pmin(d, 0))
 }
 
+# Convert back to zoo
+eng_zoo <- as.zooreg(ts(eng_df, start = c(1975, 1), frequency = 4))
 
 run_nardl <- function(x) {
-  base <- c("lrprc", "lvol", "r3", "lstock", "lrcc")
+  base <- c("lrprc", "lvol", "r3", "lrcc")
   rhs  <- c(paste0(x, c("_pos", "_neg")), setdiff(base, x))
   dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2")
+  keep <- c("lhstarts", rhs, dum)
+  dat  <- eng_zoo[, keep]
   f    <- as.formula(paste("lhstarts ~", paste(rhs, collapse = " + "),
                            "|", paste(dum, collapse = " + ")))
-
-  nardl_fit <- auto_ardl(f, data = eng_df, max_order = 4)$best_model
+  nardl_fit <- auto_ardl(f, data = dat, max_order = 4)$best_model
   uecm_fit  <- uecm(nardl_fit)
   V         <- vcovHC(uecm_fit, type = "HC1")
 
@@ -58,6 +62,7 @@ run_nardl <- function(x) {
   sr_n <- grep("^d\\(", alln, value = TRUE)
 
   res <- residuals(nardl_fit)
+  
   list(
     fit      = nardl_fit,
     bounds_f = bounds_f_test(nardl_fit, case = 3),
@@ -67,14 +72,14 @@ run_nardl <- function(x) {
     lr_sym   = sym_test(lr_p, lr_n),
     sr_sym   = sym_test(sr_p, sr_n),
     aliased  = names(which(is.na(cf))),
-    shapiro  = shapiro.test(res),
-    arch     = FinTS::ArchTest(res, lags = 4),
-    bg       = lmtest::bgtest(nardl_fit, order = 4)
+    shapiro  = tryCatch(shapiro.test(res), error = function(e) e),
+    arch     = tryCatch(FinTS::ArchTest(res, lags = 4), error = function(e) e),
+    bg       = tryCatch(lmtest::bgtest(nardl_fit, order = 4), error = function(e) e)
   )
 }
 
-out <- lapply(c("lrprc", "lrcc", "r3", "lvol", "lstock"), run_nardl)
-names(out) <- c("lrprc", "lrcc", "r3", "lvol", "lstock")
+out <- lapply(c("lrprc", "lrcc"), run_nardl)
+names(out) <- c("lrprc", "lrcc")
 
 # Summary table
 cell <- function(z, col) if (inherits(z, "anova")) z[2, col] else NA
