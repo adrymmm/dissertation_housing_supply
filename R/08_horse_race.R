@@ -71,8 +71,11 @@ uncond_fc <- eng_tsbl %>%
   filter(row_number() <= max(origin_set)) %>%
   # Create growing windows
   stretch_tsibble(.init = min(origin_set), .step = 1, .id = "origin_id") %>%
-  # Fit random walk and AR to every window
-  model(rw = RW(lhstarts), ar = AR(lhstarts ~ order(p = 0:8), ic = "aic")) %>%
+  # Fit random walk, tlsm and AR to every window
+  model(rw = RW(lhstarts),
+        ar = AR(lhstarts ~ order(p = 0:8),ic = "aic"),
+        tslm = TSLM(lhstarts ~ trend())) %>%
+
   # Forecast one step past window end
   fabletools::forecast(h = 1) %>%
   as_tibble() %>%
@@ -97,7 +100,7 @@ cond_fc_tab <- do.call(rbind, lapply(origin_set, function(o) {
 }))
 
 fc_all <- full_join(uncond_fc, cond_fc_tab, by = "origin")
-mcols  <- c("rw", "ar", "vecm", "ardl", "nardl")
+mcols <- c("rw", "ar", "tslm", "vecm", "ardl", "nardl")
 
 res <- fc_all %>%
   mutate(target = origin + 1, actual = y[target], date = eng_df$Date[target]) %>%

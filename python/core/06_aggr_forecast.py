@@ -14,16 +14,18 @@ SOURCES = [
     ("Chronos", "chronos_forecasts.csv", "Quarter", "chronos", "actual", False),
     ("ARRF",    "rf_forecasts.csv",      "Quarter", "rf",      "actual", False),
     ("LSTM",    "lstm_forecasts.csv",    "Quarter", "lstm",    "actual", False),
-    ("RW_R",    "h1_forecasts.csv",      "date",    "rw",      "actual", True),
+    ("RW",      "h1_forecasts.csv",      "date",    "rw",      "actual", True),     # R implementation
     ("AR",      "h1_forecasts.csv",      "date",    "ar",      "actual", True),
+    ("TSLM",    "h1_forecasts.csv",      "date",    "tslm",    "actual", True),
     ("VECM",    "h1_forecasts.csv",      "date",    "vecm",    "actual", True),
     ("ARDL",    "h1_forecasts.csv",      "date",    "ardl",    "actual", True),
     ("NARDL",   "h1_forecasts.csv",      "date",    "nardl",   "actual", True),
 ]
 
+
 # Cross-check benchmark for R and Python random walk
-RW_BENCHMARK = "RW_R"
- 
+RW_BENCHMARK = "RW"
+
 STRUCTURAL_BEST = "NARDL"
 ML_BEST = "ARRF"
 
@@ -86,9 +88,9 @@ for c in actual_cols[1:]:
         print(f"  WARNING: actual values disagree between models on {c}")
 
 # Check if python RW and R RW match
-if "RW_py" in merged.columns and "RW_R" in merged.columns:
-    if not np.allclose(merged["RW_py"].to_numpy(), merged["RW_R"].to_numpy(), atol=1e-6):
-        max_diff = np.max(np.abs(merged["RW_py"] - merged["RW_R"]))
+if "RW_py" in merged.columns and "RW" in merged.columns:
+    if not np.allclose(merged["RW_py"].to_numpy(), merged["RW"].to_numpy(), atol=1e-6):
+        max_diff = np.max(np.abs(merged["RW_py"] - merged["RW"]))
         print(f"  WARNING: Python's RW (chronos_forecasts.csv) and R's RW "
               f"(h1_forecasts.csv) disagree, max abs diff={max_diff:.4f} -- "
               f"the R and Python pipelines are NOT looking at the same "
@@ -96,7 +98,7 @@ if "RW_py" in merged.columns and "RW_R" in merged.columns:
     else:
         print("  OK: Python RW and R RW agree exactly -- the two pipelines "
               "are aligned on the same window and target series.\n")
-
+        
 # --- sort chronologically (required for recursive ensemble weighting) ---
 merged["_q"] = pd.PeriodIndex(merged["Quarter"], freq="Q")
 merged = merged.sort_values("_q").reset_index(drop=True)
@@ -184,6 +186,7 @@ def plot_rmse_bar(errs, benchmark=RW_BENCHMARK, title=""):
         pvals[n] = pv
 
     colors = ['#2E7D32' if n.startswith('Ensemble') else '#9E9E9E' for n in order]
+    colors = ['#2E7D32' if n.startswith('Ensemble') else '#C62828' if n == "TSLM" else '#9E9E9E' for n in order]
 
     fig, ax = plt.subplots(figsize=(9, 5))
     bars = ax.bar(order, [rmse[n] for n in order], color=colors)
