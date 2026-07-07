@@ -26,12 +26,12 @@ from chronos import ChronosPipeline
 from scipy.stats import t as tdist
 
 # --- config ---
-MASTER_DIR = "../../data/python_master"
+MASTER_DIR = "data/python_master"
 CSV         = f"{MASTER_DIR}/england_master.csv"
 TARGET      = "starts"            # lhstarts = log(TARGET)
 H           = 1                   # forecast horizon (recursive)
 NUM_SAMPLES = 100
-MODEL       = "amazon/chronos-t5-small"
+MODEL       = "amazon/chronos-t5-small" # On kaggle doen with -base for stronger model
 VECM_CSV    = None               # e.g. "vecm_fcst.csv" with column lhstarts_hat
 
 # --- data ---
@@ -125,3 +125,21 @@ out = pd.DataFrame({
 os.makedirs("../data/outputs/forecasts", exist_ok=True)
 out.to_csv("../data/outputs/forecasts/chronos_forecasts.csv", index=False)
 print("\nSaved chronos_forecasts.csv")
+
+H_FWD = 13   
+ctx = torch.tensor(y, dtype=torch.float32)          # all data through 2025Q4
+fc = pipe.predict(ctx, prediction_length=H_FWD, num_samples=250)  # [1,S,H]
+samples = fc[0].numpy()                             # (S, H)
+
+med = np.median(samples, axis=0)                    # point path, log units
+lo, hi = np.quantile(samples, [0.1, 0.9], axis=0)   # fan for a plot
+
+quarters = pd.period_range('2026Q1', periods=H_FWD, freq='Q')
+fwd = pd.DataFrame({"Quarter": quarters.astype(str),
+                    "starts": np.exp(med),
+                    "lo": np.exp(lo), "hi": np.exp(hi)})
+
+fwd.to_csv("../data/outputs/forecasts/chronos_forward.csv", index=False)
+
+
+# Forward forecast excluded due to discretization 
