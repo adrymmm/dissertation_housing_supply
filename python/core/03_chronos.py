@@ -18,12 +18,16 @@ VECM_CSV (one row per holdout quarter, same dates) for the DM test.
 NOTE: I ran this on KAGGLE
 
 """
+import sys
+sys.path.append("../..")
+
 import os
 import numpy as np
 import pandas as pd
 import torch
 from chronos import ChronosPipeline
 from scipy.stats import t as tdist
+from python.functions.forecast import metrics, dm_test
 
 # --- config ---
 MASTER_DIR = "data/python_master"
@@ -76,27 +80,6 @@ for i, t in enumerate(test_idx):
 
 actual = y[test_idx]
 
-
-# --- metrics & DM ---
-def metrics(a, p):
-    e = a - p
-    return np.sqrt(np.mean(e ** 2)), np.mean(np.abs(e))
-
-
-def dm_test(e1, e2, h=H, power=2):
-    """H0: equal accuracy. Loss = |e|^power. stat>0 => model-1 worse.
-    HLN small-sample correction; compared to t(n-1)."""
-    d = np.abs(e1) ** power - np.abs(e2) ** power
-    nn = len(d)
-    dbar = d.mean()
-    var = np.sum((d - dbar) ** 2) / nn                  # gamma0
-    for lag in range(1, h):                             # HAC up to h-1 (none for h=1)
-        var += 2 * np.sum((d[lag:] - dbar) * (d[:-lag] - dbar)) / nn
-    if var <= 0:
-        return np.nan, np.nan
-    stat = dbar / np.sqrt(var / nn)
-    stat *= np.sqrt((nn + 1 - 2 * h + h * (h - 1) / nn) / nn)
-    return stat, 2 * tdist.cdf(-abs(stat), df=nn - 1)
 
 
 print(f"holdout: last {N_TEST} quarters, h={H}, n_train_start={n - N_TEST}\n")
