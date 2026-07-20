@@ -1,9 +1,14 @@
+import sys
+sys.path.append("../..")
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import statsmodels.formula.api as smf
 from statsmodels.stats.diagnostic import breaks_cusumolsresid
 import json
+from python.functions.bridge import parse_quarter
+
 
 # Define the two data file paths
 housebuilding_file = "data/raw/starts/indicatorsofukhousebuilding.xlsx"
@@ -35,31 +40,6 @@ df = df[[
 # Convert numerical columns to numeric format
 df["starts_private"] = pd.to_numeric(df["starts_private"], errors="coerce")
 df["completions_private"] = pd.to_numeric(df["completions_private"], errors="coerce")
-
-# Convert the period text into a quarterly time index
-def parse_quarter(x):
-    x = str(x)
-
-    if len(x) < 4:
-        return pd.NaT
-
-    try:
-        year = int(x[-4:])
-    except:
-        return pd.NaT
-
-    if x.startswith("Jan - Mar"):
-        q = 1
-    elif x.startswith("Apr - Jun"):
-        q = 2
-    elif x.startswith("Jul - Sep"):
-        q = 3
-    elif x.startswith("Oct - Dec"):
-        q = 4
-    else:
-        return pd.NaT
-
-    return pd.Period(year=year, quarter=q, freq="Q")
 
 # Apply the quarter parser
 df["quarter"] = df["period"].apply(parse_quarter)
