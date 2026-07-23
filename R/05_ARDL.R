@@ -73,3 +73,20 @@ if (length(na.omit(breakdates(bp)))) confint(bp)
 # Saving fitted models
 saveRDS(ardl_best, "R/models/ardl_best.rds")
 saveRDS(ardl_ecm, "R/models/ardl_ecm.rds")
+
+# PYTHON EXPORT SECTION
+ecm_coefs <- data.frame(
+  type = "ecm",
+  term = names(coef(ardl_ecm)),
+  estimate = coef(ardl_ecm)
+)
+
+lr_coefs <- multipliers(ardl_best)
+lr_coefs <- data.frame(
+  type = "longrun",
+  term = lr_coefs$Term,
+  estimate = lr_coefs$Estimate
+)
+
+all_coefs <- rbind(ecm_coefs, lr_coefs)
+write.csv(all_coefs, "R/models/ardl_coefs_full.csv", row.names = FALSE)
