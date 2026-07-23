@@ -1,7 +1,7 @@
 
 import pandas as pd
 import numpy as np
-
+import json
 # Convert the period text into a quarterly time index
 def parse_quarter(x):
     x = str(x)
@@ -27,6 +27,34 @@ def parse_quarter(x):
 
     return pd.Period(year=year, quarter=q, freq="Q")
 
+def build_bridge_inputs(base="../.."):
+    fy_map = lambda q: q.year - 1 if q.quarter == 1 else q.year
+    p = json.load(open(f"{base}/data/processed/bridge_params.json"))
+    seasonal = {1: 0, 2: p["q2"], 3: p["q3"], 4: p["q4"]}
+
+    eng = pd.read_csv(f"{base}/data/python_master/england_master.csv")
+    seed = np.log(eng["starts"].dropna().iloc[-4:].values)
+
+    ons = pd.read_excel(f"{base}/data/raw/starts/indicatorsofukhousebuilding.xlsx", sheet_name="1b", skiprows=5)
+    ons["quarter"] = ons["Period"].apply(parse_quarter)
+    ons = ons.dropna(subset=["quarter"]).set_index("quarter").sort_index()
+    ons_fy = ons.index.map(fy_map)
+
+    components = ["New build completions", "Net conversions", "Net change of use",
+                 "Net other gains", "Demolitions", "Total net additional dwellings"]
+    lt120 = pd.read_excel(f"{base}/data/raw/net_additions/Live_Table_120.ods", sheet_name="LT120_unrounded", skiprows=4)
+    lt120 = lt120.set_index(lt120.columns[0]).T[components].iloc[:-2].apply(pd.to_numeric, errors="coerce")
+    avg = lt120.iloc[-4:-1].mean()
+
+    priv_actual = ons.groupby(ons_fy)["Completed - Private Enterprise"].sum().loc[2021:2023].mean()
+    non_private = avg["New build completions"] - priv_actual
+    net_add = lambda priv: (priv + non_private + avg["Net conversions"] + avg["Net change of use"]
+                            - avg["Demolitions"] + avg["Net other gains"])
+    actual_back = ons.loc[pd.PeriodIndex(["2025Q2","2025Q3","2025Q4"], freq="Q"),
+                          "Completed - Private Enterprise"].sum()
+
+    return dict(p=p, seasonal=seasonal, seed=seed, fy_map=fy_map,
+                net_add=net_add, actual_back=actual_back, lt120=lt120)
 
 def run_bridge(path, log_col, seed, p, seasonal, fy_map, net_add, actual_back, strip_space=False):
     fc = pd.read_csv(path)
