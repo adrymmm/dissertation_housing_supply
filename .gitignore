@@ -16,3 +16,7 @@ R/models/
 .~lock.*#
 __pycache__/
 *.pyc
+
+# Ignore contents of Marshall & Zhang data folders
+R/marshall_zhang/original/working/
+R/marshall_zhang/original/data/
