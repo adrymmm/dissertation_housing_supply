@@ -14,7 +14,7 @@ for (v in colnames(eng_tf)) {
   type_adf  <- if (v == "r3") "drift"     else "trend"
   type_kpss <- if (v == "r3") "mu"        else "tau"
   type_za   <- if (v == "r3") "intercept" else "both"
-  
+    
   cat("\n---", v, "(levels) ---\n")
   
   adf_lev <- ur.df(eng_tf[, v], type = type_adf, lags = pmax_eng, selectlags = "AIC")
