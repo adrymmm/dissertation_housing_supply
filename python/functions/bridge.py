@@ -57,7 +57,7 @@ def build_bridge_inputs(base="../.."):
                 net_add=net_add, actual_back=actual_back, lt120=lt120)
 
 def run_bridge(path, log_col, seed, p, seasonal, fy_map, net_add, actual_back, strip_space=False):
-    fc = pd.read_csv(path)
+    fc = path.copy() if isinstance(path, pd.DataFrame) else pd.read_csv(path)
     if strip_space:
         fc["period"] = fc["period"].str.replace(" ", "", regex=False)
     if log_col == "ensemble_log" and "ensemble_log" not in fc:
