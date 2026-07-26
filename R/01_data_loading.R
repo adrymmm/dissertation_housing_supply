@@ -13,8 +13,8 @@ df$Date <- as.Date(zoo::as.yearqtr(df$Date, format = "%YQ%q"))
 
 df <- df %>%
   mutate(
-    lrprc  = log(hprice / cc_def),   # real house prices
-    lrcc   = log(cc / cc_def),       # real construction costs
+    lrprc  = log(hprice / gdp_def),   # real house prices
+    lrcc   = log(cc / gdp_def),       # real construction costs
     lhstarts = log(starts),          # starts (no deflation needed)
     lvol   = log(vol),               # transactions volume
     lstock = log(hstock),            # housing stock

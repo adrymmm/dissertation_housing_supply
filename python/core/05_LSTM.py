@@ -9,7 +9,7 @@ from keras import layers, callbacks
 np.random.seed(42)
 keras.utils.set_random_seed(42)
 
-# --- load + transform: single cc_def deflator for both real series ---
+# --- load + transform: single gdp_def deflator for both real series ---
 MASTER_DIR = "../../data/python_master"
 df_raw = pd.read_csv(f"{MASTER_DIR}/england_master.csv")
 print(df_raw.columns.tolist())
@@ -32,8 +32,8 @@ df_raw = df_raw[df_raw['date'] < test_end_date].reset_index(drop=True)
 
 # Feature engineering (logs, deflators, and seasonal dummies)
 df_raw['lhstarts'] = np.log(df_raw['lhstarts'])
-df_raw['lrprc']    = np.log((df_raw['lrprc'] / df_raw['cc_def']) * 100)
-df_raw['lrcc']     = np.log((df_raw['lrcc'] / df_raw['cc_def']) * 100)
+df_raw['lrprc']    = np.log((df_raw['lrprc'] / df_raw['gdp_def']) * 100)
+df_raw['lrcc']     = np.log((df_raw['lrcc'] / df_raw['gdp_def']) * 100)
 df_raw['lvol']     = np.log(df_raw['lvol'])
 df_raw['lstock']   = np.log(df_raw['lstock'])
 

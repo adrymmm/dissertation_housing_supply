@@ -10,11 +10,11 @@ df.rename(columns={'Unnamed: 0': 'Quarter'}, inplace=True)
 df['Quarter'] = pd.PeriodIndex(df['Quarter'], freq='Q')
 df.set_index('Quarter', inplace=True)
 
-# Transformations -- single deflator (cc_def) for both real series, matching
+# Transformations -- single deflator (gdp_def) for both real series, matching
 # the rest of the horse race.
 df['log_starts'] = np.log(df['starts'])
-df['log_hprice'] = np.log(df['hprice'] / df['cc_def'])
-df['log_cc']     = np.log(df['cc'] / df['cc_def'])
+df['log_hprice'] = np.log(df['hprice'] / df['gdp_def'])
+df['log_cc']     = np.log(df['cc'] / df['gdp_def'])
 df['log_vol']    = np.log(df['vol'])
 
 df['log_starts_lag1'] = df['log_starts'].shift(1)
