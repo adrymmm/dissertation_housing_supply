@@ -14,7 +14,7 @@ df <- na.omit(df)
 df$Date <- as.Date(zoo::as.yearqtr(df$Date, format = "%YQ%q"))
 
 # real rate = nominal Bank Rate - YoY inflation from the GDP/consumption deflator.
-# p_def used here rather than cc_def: the relevant deflator for a discount rate is a
+# p_def used here rather than gdp_def: the relevant deflator for a discount rate is a
 # general price index, not construction costs. Costs 4 obs, so sample starts 1976Q1.
 df <- df %>%
   arrange(Date) %>%
@@ -22,8 +22,8 @@ df <- df %>%
     infl_yoy = 100 * (log(p_def) - dplyr::lag(log(p_def), 4)),
     r3_nom   = rate,
     r3       = rate - infl_yoy,
-    lrprc    = log(hprice / cc_def),
-    lrcc     = log(cc / cc_def),
+    lrprc    = log(hprice / gdp_def),
+    lrcc     = log(cc / gdp_def),
     lhstarts = log(starts),
     lvol     = log(vol),
     lstock   = log(hstock)
