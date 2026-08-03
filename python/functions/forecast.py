@@ -65,7 +65,7 @@ def report(mask, label):
 
     return errs
 
-def plot_rmse_bar(errs, benchmark=RW_BENCHMARK, title=""):
+def plot_rmse_bar(errs, benchmark="RW", title=""):
     rmse = {n: np.sqrt(np.mean(e ** 2)) for n, e in errs.items()}
     order = sorted(rmse, key=rmse.get)  # ascending, best first
 
@@ -76,7 +76,6 @@ def plot_rmse_bar(errs, benchmark=RW_BENCHMARK, title=""):
         _, pv = dm_test(errs[n], errs[benchmark])
         pvals[n] = pv
 
-    colors = ['#2E7D32' if n.startswith('Ensemble') else '#9E9E9E' for n in order]
     colors = ['#2E7D32' if n.startswith('Ensemble') else '#C62828' if n == "TSLM" else '#9E9E9E' for n in order]
 
     fig, ax = plt.subplots(figsize=(9, 5))
