@@ -1,5 +1,8 @@
 import sys
-sys.path.append("../..")
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.append(str(ROOT))
 
 import pandas as pd
 import numpy as np
@@ -61,10 +64,12 @@ df["quarter_num"] = df.index.quarter
 df["d08Q3"] = (df.index == "2008Q3").astype(int)
 df["d20Q2"] = (df.index == "2020Q2").astype(int)
 df["d20Q3"] = (df.index == "2020Q3").astype(int)
+df["d23Q2"] = (df.index == "2023Q2").astype(int)
+df["d23Q3"] = (df.index == "2023Q3").astype(int)
 df.dropna()
 
 model = smf.ols(
-    "ln_C ~ ln_C_lag1 + ln_S_lag4 + C(quarter_num) + d08Q3 + d20Q2 + d20Q3",
+    "ln_C ~ ln_C_lag1 + ln_S_lag4 + C(quarter_num) + d08Q3 + d20Q2 + d20Q3 + d23Q2 + d23Q3",
     data=df
 ).fit(cov_type="HAC", cov_kwds={"maxlags": 4})
 
@@ -88,6 +93,8 @@ bridge_params = {
     "d08Q3": model.params["d08Q3"],
     "d20Q2": model.params["d20Q2"],
     "d20Q3": model.params["d20Q3"],
+    "d23Q2": model.params["d23Q2"],
+    "d23Q3": model.params["d23Q3"],
     "smearing_factor": float(np.mean(np.exp(model.resid))),
     "last_ln_C": float(df["ln_C"].iloc[-1])  # seed value for recursive forecast
 }
