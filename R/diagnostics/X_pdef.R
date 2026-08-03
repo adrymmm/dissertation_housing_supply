@@ -44,8 +44,17 @@ eng_tf <- df %>%
   as.matrix()
 eng_ts <- ts(eng_tf, start = c(start_q, start_qtr), frequency = 4)
 
+ta <- time(eng_ts); dd <- function(yr) which.min(abs(ta - yr))
+final_dummies <- matrix(0, nrow(eng_ts), 5,
+                        dimnames = list(NULL, c("gfc_2008Q3","covid_2020Q2","covid_2020Q3","regstd_2023Q2","regstd_2023Q3")))
+final_dummies[dd(2008.50), 1] <- 1
+final_dummies[dd(2020.25), 2] <- 1
+final_dummies[dd(2020.50), 3] <- 1
+final_dummies[dd(2023.25), 4] <- 1
+final_dummies[dd(2023.50), 5] <- 1
+
 # VECM at the headline spec: r=1, K=5, ecdet="none" (case 3), season=4
-jo <- ca.jo(eng_ts, type = "trace", ecdet = "none", K = 5, spec = "transitory", season = 4)
+jo <- ca.jo(eng_ts, type = "trace", ecdet = "none", K = 5, spec = "transitory", season = 4, dumvar = final_dummies)
 cat("\n--- Johansen trace, p_def ---\n"); print(summary(jo))
 
 vecm <- cajorls(jo, r = 1)
@@ -58,14 +67,20 @@ cat(sprintf("\nAdjustment speed (alpha): %.4f\n", alpha))
 cat(sprintf("Half-life (quarters): %.2f\n", log(0.5) / log(1 + alpha)))
 
 # restrict alpha to zero for lrprc and r3, as in the headline test
-DA <- matrix(c(1,0,0,0,   # lhstarts  free
-               0,0,0,0,   # lrprc     restricted
-               0,1,0,0,   # lvol      free
-               0,0,0,0,   # r3        restricted
-               0,0,1,0,   # lstock    free
-               0,0,0,1),  # lrcc      free
-             nrow = 6, byrow = TRUE)
-summary(alrtest(jo, A = DA, r = 1))
+vecm_u <- cajorls(jo, r = 1)
+srlm <- summary(vecm_u$rlm)
+b <- coef(vecm_u$rlm)["ect1", ]
+E <- residuals(vecm_u$rlm)
+X <- model.matrix(vecm_u$rlm)
+g <- solve(crossprod(X))["ect1", "ect1"]
+
+for (eqs in list(c("lrprc.d","r3.d"), c("lrprc.d","lvol.d","r3.d","lrcc.d"))) {
+  a <- b[eqs]
+  S <- crossprod(E[, eqs]) / (nrow(E) - ncol(X))
+  W <- as.numeric(t(a) %*% solve(g * S) %*% a)
+  cat(sprintf("p_def WE (%s): chi2(%d) = %.3f  p = %.4f\n",
+              paste(eqs, collapse=","), length(eqs), W, pchisq(W, df=length(eqs), lower.tail=FALSE)))
+}
 
 # ARDL at the headline spec: lstock dropped, same dummies, same max_order
 ta <- time(eng_ts); dd <- function(yr) which.min(abs(ta - yr))
@@ -117,27 +132,3 @@ cat(sprintf("\nECT: gdp_def -0.4823, p_def auto %.4f, p_def fixed %.4f\n",
 saveRDS(ardl_best, "R/models/diagnostics/ardl_best_pdef.rds")
 saveRDS(ardl_ecm,  "R/models/diagnostics/ardl_ecm_pdef.rds")
 saveRDS(jo,        "R/models/diagnostics/jo_pdef.rds")
-
-# --- Summary --------------------------------------------------------------
-# Substituting p_def for gdp_def in lrprc/lrcc leaves lrprc and lrcc I(1)
-# (ADF -1.59, -1.53), so the swap is mechanically valid. ARDL is robust:
-# auto_ardl selects the same (4,4,4,4,4) order, bounds test moves from
-# borderline to decisive (F=5.19 p=0.008, t=-4.71 p=0.007), and elasticities
-# hold sign/ordering within 6-14% (price 0.85->0.78, cost -1.99->-1.70,
-# ECT -0.48->-0.51) - a second specification, alongside the real rate check,
-# in which the headline's borderline bounds result resolves cleanly. The
-# VECM is not robust: price roughly halves (1.13->0.54) because price and
-# cost load on the CE at -1.45 net rather than equal-and-opposite, so the
-# ~0.14 log-point trend in the gdp_def/p_def wedge does not cancel and
-# instead redistributes across the loadings (ecdet="none" leaves no trend
-# term to absorb it). Decisive: weak exogeneity of lrprc/r3 is REJECTED
-# under p_def (LR=9.2, df=2, p=0.01), driven by r3.d loading +1.85 on the
-# first CE, vs. held comfortably under gdp_def (1.78, p=0.41) and the real
-# rate (1.96, p=0.38). Since weak exogeneity underpins both the ARDL
-# conditional specification and the OBR-conditioned forward projections,
-# gdp_def is retained as headline on this basis, not merely for
-# Michalis comparability. Net effect: price elasticity now spans ~0.54-1.14
-# across defensible specifications - wider than the +/-25%/50% elasticity
-# counterfactual grid - but the counterfactual already showed a 50% swing
-# moves cumulative net additions by ~1,300 homes against a ~498k shortfall,
-# so this imprecision does not threaten the missed-target conclusion.
