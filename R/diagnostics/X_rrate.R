@@ -120,9 +120,9 @@ print(round(data.frame(
 cat(sprintf("\nECT: nominal -0.4823, real auto %.4f, real fixed %.4f\n",
             coef(ardl_ecm)["ect"], coef(recm(ardl_fixed, case = 3))["ect"]))
 
-saveRDS(ardl_best, "R/models/rrate/ardl_best_rrate.rds")
-saveRDS(ardl_ecm,  "R/models/rrate/ardl_ecm_rrate.rds")
-saveRDS(jo,        "R/models/rrate/jo_rrate.rds")
+saveRDS(ardl_best, "R/models/diagnostics/ardl_best_rrate.rds")
+saveRDS(ardl_ecm,  "R/models/diagnostics/ardl_ecm_rrate.rds")
+saveRDS(jo,        "R/models/diagnostics/jo_rrate.rds")
 
 
 # --- Findings -----------------------------------------------------------------
