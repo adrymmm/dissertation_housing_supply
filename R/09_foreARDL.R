@@ -6,7 +6,7 @@ obr <- read.csv("data/python_master/OBR/obr_scenario.csv")
 
 # Dropping overlap row
 obr <- obr[obr$period > "2025Q4", ]
-obr$d08Q3 <- 0; obr$d20Q2 <- 0; obr$d20Q3 <- 0; obr$d23Q2 <- 0   # no future shocks
+obr$d08Q3 <- 0; obr$d20Q2 <- 0; obr$d20Q3 <- 0; obr$d23Q2 <- 0;  obr$d23Q3 <- 0 # no future shocks
 
 # Last in-sample lrcc level
 eng <- as.data.frame(readRDS("R/models/eng_tf.rds"))
@@ -14,7 +14,7 @@ lrcc_last <- as.numeric(tail(eng$lrcc, 1))
 
 # ARDL forecast
 ardl_model <- readRDS("R/models/ardl_best.rds")
-ardl_nd <- obr[, c("lrprc","lvol","r3","lrcc","d08Q3","d20Q2","d20Q3","d23Q2")]
+ardl_nd <- obr[, c("lrprc","lvol","r3","lrcc","d08Q3","d20Q2","d20Q3","d23Q2", "d23Q3")]
 ardl_nd_zoo <- zooreg(ardl_nd, start = as.yearqtr("2026 Q1"), frequency = 4)
 ardl_fc <- predict(ardl_model, ardl_nd_zoo)
 

@@ -7,17 +7,18 @@ eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 
 # Creating impulse dummies
 ta <- time(eng_ts); dd <- function(yr) which.min(abs(ta - yr))
-D <- matrix(0, nrow(eng_ts), 4,
-            dimnames = list(NULL, c("d08Q3","d20Q2","d20Q3","d23Q2")))
+D <- matrix(0, nrow(eng_ts), 5,
+            dimnames = list(NULL, c("d08Q3","d20Q2","d20Q3","d23Q2", "d23Q3")))
 D[dd(2008.50),1] <- 1
 D[dd(2020.25),2] <- 1
 D[dd(2020.50),3] <- 1
 D[dd(2023.25),4] <- 1
+D[dd(2023.50),5] <- 1
 
 # Converting to zoo for forecast
 eng_zoo <- as.zooreg(ts(cbind(as.matrix(eng_tf), D), start = c(1975, 1), frequency = 4))
 
-mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lrcc | d08Q3 + d20Q2 + d20Q3 + d23Q2,
+mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lrcc | d08Q3 + d20Q2 + d20Q3 + d23Q2 + d23Q3,
                  data = eng_zoo, max_order = 4)
 
 # Top lag structures
@@ -38,7 +39,7 @@ multipliers(ardl_best)
 
 d <- ardl_best$model
 names(d) <- make.names(names(d))
-dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2")
+dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2", "d23Q3")
 core <- setdiff(names(d), dum)
 
 # FWL - partialling out dummies

@@ -13,6 +13,7 @@ eng_df$d08Q3 <- 0; eng_df$d08Q3[dd(2008.50)] <- 1
 eng_df$d20Q2 <- 0; eng_df$d20Q2[dd(2020.25)] <- 1
 eng_df$d20Q3 <- 0; eng_df$d20Q3[dd(2020.50)] <- 1
 eng_df$d23Q2 <- 0; eng_df$d23Q2[dd(2023.25)] <- 1
+eng_df$d23Q3 <- 0; eng_df$d23Q3[dd(2023.50)] <- 1
 
 eng_df <- na.omit(eng_df)
 eng_df <- eng_df[is.finite(rowSums(eng_df)), ]
@@ -32,7 +33,7 @@ eng_zoo <- as.zooreg(ts(eng_df, start = c(1975, 1), frequency = 4))
 run_nardl <- function(x) {
   base <- c("lrprc", "lvol", "r3", "lrcc")
   rhs  <- c(paste0(x, c("_pos", "_neg")), setdiff(base, x))
-  dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2")
+  dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2", "d23Q3")
   keep <- c("lhstarts", rhs, dum)
   dat  <- eng_zoo[, keep]
   f    <- as.formula(paste("lhstarts ~", paste(rhs, collapse = " + "),
