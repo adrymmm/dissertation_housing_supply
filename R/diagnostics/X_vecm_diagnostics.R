@@ -71,3 +71,39 @@ A_full <- make_A(c("lhstarts", "lstock"), vars6)
 A_pair <- make_A(setdiff(vars6, c("lrprc", "lrcc")), vars6)
 cat("r=2, full set:\n"); print(summary(alrtest(jo_eng, A = A_full, r = 2)))
 cat("r=2, pair:\n");     print(summary(alrtest(jo_eng, A = A_pair, r = 2)))
+
+# ---- Michalis comparability: does dropping impulse dummies alone move
+# the VECM toward his figures? K held at 5 - isolates dummy treatment,
+# not lag order (his implied VAR order is 2, per lag-order memo).
+pmax_eng <- floor(12 * (nrow(eng_tf) / 100)^(1/4))
+
+jo_nodum <- ca.jo(eng_tf, type = "trace", ecdet = "none", K = 5L,
+                  spec = "transitory", season = 4)
+summary(jo_nodum)
+
+jo_nodum_eig <- ca.jo(eng_tf, type = "eigen", ecdet = "none", K = 5L,
+                      spec = "transitory", season = 4)
+summary(jo_nodum_eig)
+# check trace/eigen above before trusting r=1 - rank has already flipped
+# with dummy count in this exact system (r=2 four-dummy, r=1 three/five)
+
+r_nodum <- 1L  # revise if trace/eigen disagree
+vecm_nodum <- cajorls(jo_nodum, r = r_nodum)
+beta_nodum <- vecm_nodum$beta
+print(round(beta_nodum / -beta_nodum["lhstarts.l1", ], 3))  # normalise lhstarts=1
+
+srlm_nodum <- summary(vecm_nodum$rlm)
+ect_nodum  <- srlm_nodum[["Response lhstarts.d"]]$coefficients["ect1", ]
+cat(sprintf("no-dummy ECT: coef=%.4f  t=%.3f  half-life=%.2fq\n",
+            ect_nodum["Estimate"], ect_nodum["t value"],
+            log(0.5) / log(1 + ect_nodum["Estimate"])))
+
+# five-dummy comparator for the same three figures, side by side
+vecm_5dum  <- cajorls(jo_eng, r = 1)
+beta_5dum  <- vecm_5dum$beta
+print(round(beta_5dum / -beta_5dum["lhstarts.l1", ], 3))
+srlm_5dum  <- summary(vecm_5dum$rlm)
+ect_5dum   <- srlm_5dum[["Response lhstarts.d"]]$coefficients["ect1", ]
+cat(sprintf("five-dummy ECT: coef=%.4f  t=%.3f  half-life=%.2fq\n",
+            ect_5dum["Estimate"], ect_5dum["t value"],
+            log(0.5) / log(1 + ect_5dum["Estimate"])))
