@@ -1,77 +1,38 @@
 library(ARDL)
-library(strucchange)
 
 # IMPORTANT HOUSING STOCK IS DROPPED
 eng_tf <- readRDS("R/models/eng_tf.rds")
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
 
-# Creating impulse dummies
+# Impulse dummies
 ta <- time(eng_ts); dd <- function(yr) which.min(abs(ta - yr))
 D <- matrix(0, nrow(eng_ts), 5,
-            dimnames = list(NULL, c("d08Q3","d20Q2","d20Q3","d23Q2", "d23Q3")))
+            dimnames = list(NULL, c("d08Q3","d20Q2","d20Q3","d23Q2","d23Q3")))
 D[dd(2008.50),1] <- 1
 D[dd(2020.25),2] <- 1
 D[dd(2020.50),3] <- 1
 D[dd(2023.25),4] <- 1
 D[dd(2023.50),5] <- 1
 
-# Converting to zoo for forecast
-eng_zoo <- as.zooreg(ts(cbind(as.matrix(eng_tf), D), start = c(1975, 1), frequency = 4))
+# Centred seasonals (matches ca.jo's season=4)
+q <- cycle(eng_ts)
+S <- outer(as.numeric(q), 1:3, "==") - 1/4
+colnames(S) <- c("sd1","sd2","sd3")
 
-mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lrcc | d08Q3 + d20Q2 + d20Q3 + d23Q2 + d23Q3,
-                 data = eng_zoo, max_order = 4)
+eng_zoo <- as.zooreg(ts(cbind(as.matrix(eng_tf), D, S), start = c(1975, 1), frequency = 4))
 
-# Top lag structures
-mod$top_orders
+mod <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lrcc |
+                   d08Q3 + d20Q2 + d20Q3 + d23Q2 + d23Q3 + sd1 + sd2 + sd3,
+                 data = eng_zoo, max_order = 6)
 ardl_best <- mod$best_model
+cat("Selected order:", paste(ardl_best$order, collapse = ","), "\n")
 summary(ardl_best)
 
-# Bounds test for cointegration (Pesaran-Shin-Smith F-bounds)
-bounds_f_test(ardl_best, case = 3)
-bounds_t_test(ardl_best, case = 3)
-# Reject null of no cointegration
+ardl_ecm <- recm(ardl_best, case = 3)
+summary(ardl_ecm)
+multipliers(ardl_best)
 
-ardl_ecm <- recm(ardl_best, case = 3) # Reparametrize to the conditional ECM
-summary(ardl_ecm) # Short-run ecm, speed of adjustment
-
-# Long-run elasticities
-multipliers(ardl_best)                
-
-d <- ardl_best$model
-names(d) <- make.names(names(d))
-dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2", "d23Q3")
-core <- setdiff(names(d), dum)
-
-# FWL - partialling out dummies
-Dm    <- cbind(1, as.matrix(d[, dum]))
-purge <- function(z) lm.fit(Dm, z)$residuals
-dp    <- as.data.frame(lapply(d[, core], purge)) 
-names(dp) <- core
-
-f     <- reformulate(names(dp)[-1], response = names(dp)[1])
-cusum <- efp(f, data = dp, type = "Rec-CUSUM")
-plot(cusum)
-sctest(cusum)
-
-rr <- recresid(f, data = dp)
-n <- length(rr)
-i <- 1:n
-s <- cumsum(rr^2)/sum(rr^2)
-c0 <- 0.08498
-plot(i/n, s, type="l", xlab="t/n", ylab="CUSUMSQ", main="ARDL CUSUMSQ")
-abline(0, 1, lty=2)
-lines(i/n, i/n + c0, col="red")
-lines(i/n, i/n - c0, col="red")
-
-ect <- ardl_ecm$model[, "ect"]            # equilibrium errors from recm
-oc  <- efp(ect ~ 1, type = "OLS-CUSUM"); plot(oc); sctest(oc)
-bp  <- breakpoints(ect ~ 1, h = 0.15)
-print(sctest(oc))     # report this p-value
-summary(bp)           # "Optimal number of breakpoints: 0"
-if (length(na.omit(breakdates(bp)))) confint(bp)
-
-
-# Saving fitted models
+saveRDS(mod, "R/models/ardl_mod.rds")  # keeps top_orders for the diagnostics script
 saveRDS(ardl_best, "R/models/ardl_best.rds")
 saveRDS(ardl_ecm, "R/models/ardl_ecm.rds")
 
@@ -81,13 +42,13 @@ ecm_coefs <- data.frame(
   term = names(coef(ardl_ecm)),
   estimate = coef(ardl_ecm)
 )
-
 lr_coefs <- multipliers(ardl_best)
+print(lr_coefs$Term)  # confirm the intercept label before trusting the filter below
+lr_coefs <- lr_coefs[!grepl("Intercept|Constant", lr_coefs$Term, ignore.case = TRUE), ]
 lr_coefs <- data.frame(
   type = "longrun",
   term = lr_coefs$Term,
   estimate = lr_coefs$Estimate
 )
-
 all_coefs <- rbind(ecm_coefs, lr_coefs)
 write.csv(all_coefs, "R/models/ardl_coefs_full.csv", row.names = FALSE)
