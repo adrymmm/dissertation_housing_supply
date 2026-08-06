@@ -43,7 +43,7 @@ ecm_coefs <- data.frame(
   estimate = coef(ardl_ecm)
 )
 lr_coefs <- multipliers(ardl_best)
-print(lr_coefs$Term)  # confirm the intercept label before trusting the filter below
+print(lr_coefs$Term)
 lr_coefs <- lr_coefs[!grepl("Intercept|Constant", lr_coefs$Term, ignore.case = TRUE), ]
 lr_coefs <- data.frame(
   type = "longrun",
