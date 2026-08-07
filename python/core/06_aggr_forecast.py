@@ -99,6 +99,7 @@ actual = merged[actual_cols[0]].to_numpy()
 ens_avg = np.full(n_rows, np.nan)
 ens_invmse = np.full(n_rows, np.nan)
 
+# Rolling origin evaluation
 for t in range(n_rows):
     preds_t = merged.loc[t, BLEND_MODELS].to_numpy(dtype=float)
     ens_avg[t] = np.nanmean(preds_t)
