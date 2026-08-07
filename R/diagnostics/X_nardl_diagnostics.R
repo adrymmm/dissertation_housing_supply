@@ -1,87 +1,48 @@
-library(ARDL)
-library(zoo)
-library(lmtest)
-library(tseries)
-library(car)
-library(sandwich)
+source("R/functions/nardl_functions.R")
 
-eng_zoo <- readRDS("R/models/nardl_eng_zoo.rds")
-dum     <- readRDS("R/models/nardl_dum.rds")
-out     <- readRDS("R/models/nardl_fits.rds")
+eng_zoo  <- readRDS("R/models/nardl_eng_zoo.rds")
+dum_full <- readRDS("R/models/nardl_dum_full.rds")
+out_full <- readRDS("R/models/nardl_fits_full.rds")
 
-reset_manual <- function(m, powers = 2:3) {
-  y <- as.numeric(model.response(model.frame(m)))
-  X <- model.matrix(m)
-  f <- as.numeric(fitted(m))
-  aux_terms <- poly(f, max(powers), raw = TRUE)[, powers, drop = FALSE]
-  aux  <- lm(y ~ X - 1 + aux_terms)
-  base <- lm(y ~ X - 1)
-  waldtest(base, aux)
-}
+nl_vars <- c("lrprc", "lrcc", "r3", "lvol")
 
-# ---- residual diagnostics on each selected NARDL --------------------------
-diag_tbl <- do.call(rbind, lapply(out, function(z) {
-  m <- z$fit
-  data.frame(var = z$var, order = paste(z$order, collapse=","),
-             n = nobs(m), k = length(coef(m)),
-             BG4_p  = bgtest(m, order = 4)$p.value,
-             BG8_p  = bgtest(m, order = 8)$p.value,
-             BP_p   = bptest(m)$p.value,
-             JB_p   = jarque.bera.test(residuals(m))$p.value,
-             RESET_p = reset_manual(m)$`Pr(>F)`[2])
-}))
-cat("== residual diagnostics per NARDL screen ==\n")
+# Dummy-set Sensitivity
+dummy_variants <- list(
+  gfc_only = c("d08Q3"),
+  none     = character(0)
+)
+
+out_variants <- setNames(
+  lapply(names(dummy_variants), function(spec_name) {
+    dum <- dummy_variants[[spec_name]]
+    setNames(lapply(nl_vars, run_nardl, dum = dum, eng_zoo = eng_zoo), nl_vars)
+  }),
+  names(dummy_variants)
+)
+
+out_all <- c(list(full = out_full), out_variants)
+
+summary_tbl <- summarize_specs(out_all)
+cat("== dummy-set sensitivity ==\n")
+print_short_sum(summary_tbl)
+
+# Residual diagnostics
+diag_tbl <- residual_diag_table(out_all)
+cat("\n== residual diagnostics per NARDL screen (all dummy specs) ==\n")
 print(diag_tbl, row.names = FALSE, digits = 3)
 
-# Run this before selection sensitivity test
-gts <- function(f, data, o, thresh = 0.10) {
-  vars <- all.vars(f)[seq_along(o)]
-  repeat {
-    m     <- ardl(f, data = data, order = o)
-    cf    <- summary(m)$coefficients
-    tails <- ifelse(o > 0, paste0("L(", vars, ", ", o, ")"), NA)
-    keep  <- !is.na(tails) & tails %in% rownames(cf) & c(o[1] > 1, o[-1] > 0)
-    if (!any(keep)) return(list(fit = m, order = o))
-    p <- cf[tails[keep], "Pr(>|t|)"]
-    if (max(p) <= thresh) return(list(fit = m, order = o))
-    i <- which(keep)[which.max(p)]
-    o[i] <- o[i] - 1
-  }
-}
-
-
-hac <- function(m) NeweyWest(m, lag = 4, prewhite = FALSE)
-
-test_symmetry <- function(m, x) {
-  ue <- uecm(m)
-  b  <- names(coef(m))
-  pick <- function(v) grep(sprintf("^%s$|^L\\(%s, ", v, v), b, value = TRUE)
-  pl <- pick(paste0(x, "_pos")); ng <- pick(paste0(x, "_neg"))
-  lr <- linearHypothesis(m, paste(paste(pl, collapse=" + "), "=",
-                                  paste(ng, collapse=" + ")), vcov. = hac(m))
-  
-  eb <- names(coef(ue))
-  ep <- function(v) grep(sprintf("^d\\(%s\\)$|^d\\(L\\(%s, ", v, v), eb, value = TRUE)
-  ps <- ep(paste0(x, "_pos")); nsr <- ep(paste0(x, "_neg"))
-  sr <- if (length(ps) && length(nsr))
-    linearHypothesis(ue, paste(paste(ps, collapse=" + "), "=",
-                               paste(nsr, collapse=" + ")), vcov. = hac(ue))
-  
-  c(LR_F = unname(lr$F[2]), LR_p = lr$`Pr(>F)`[2],
-    SRadd_F = if (is.null(sr)) NA else unname(sr$F[2]),
-    SRadd_p = if (is.null(sr)) NA else sr$`Pr(>F)`[2])
-}
-
-for (nm in names(out)) {
-  reg <- out[[nm]]$reg
-  f   <- as.formula(paste("lhstarts ~", paste(reg, collapse = " + "),
-                          "|", paste(dum, collapse = " + ")))
+# Lag order sensitivity
+cat("\n== lag-order sensitivity (full spec) ==\n")
+for (nm in nl_vars) {
   cat("\n==", nm, "==\n")
   for (ml in c(5, 6, 7, 8, 10)) {
-    g   <- gts(f, eng_zoo[, c("lhstarts", reg, dum)], c(ml, rep(ml, length(reg))))
-    res <- test_symmetry(g$fit, nm)
-    cat("max_lag=", ml, " order=", paste(g$order, collapse=","),
-        " LR_p=", round(res["LR_p"], 3),
-        " SRadd_p=", round(res["SRadd_p"], 3), "\n", sep = "")
+    z <- run_nardl(nm, dum = dum_full, eng_zoo = eng_zoo, max_lag = ml)
+    cat("max_lag=", ml, " order=", paste(z$order, collapse = ","),
+        " LR_p=", round(z$LR_p, 3),
+        " SRadd_p=", round(z$SRadd_p, 3), "\n", sep = "")
   }
 }
+
+saveRDS(out_all, "R/models/nardl_fits_dummy_sensitivity.rds")
+write.csv(summary_tbl, "R/models/nardl_summary_dummy_sensitivity.csv", row.names = FALSE)
+write.csv(diag_tbl, "R/models/nardl_residual_diagnostics.csv", row.names = FALSE)
