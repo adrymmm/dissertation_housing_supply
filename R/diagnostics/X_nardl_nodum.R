@@ -5,28 +5,13 @@ library(sandwich)
 
 eng_tf <- readRDS("R/models/eng_tf.rds")
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
-
 ta <- time(eng_ts); dd <- function(yr) which.min(abs(ta - yr))
-
-# Impulse dummies
-D <- matrix(0, nrow(eng_ts), 5,
-            dimnames = list(NULL, c("d08Q3",
-                                    "d20Q2",
-                                    "d20Q3",
-                                    "d23Q2","
-                                    d23Q3")))
-
-D[dd(2008.50),1] <- 1
-D[dd(2020.25),2] <- 1
-D[dd(2020.50),3] <- 1
-D[dd(2023.25),4] <- 1
-D[dd(2023.50),5] <- 1
 
 # Seasonals
 S <- outer(as.numeric(cycle(eng_ts)), 1:3, "==") - 1/4
 colnames(S) <- c("sd1","sd2","sd3")
 
-eng_df <- as.data.frame(cbind(as.matrix(eng_tf), D, S))
+eng_df <- as.data.frame(cbind(as.matrix(eng_tf), S))
 nl_vars <- c("lrprc", "lrcc", "r3", "lvol")
 
 # Partial sums
@@ -39,10 +24,8 @@ stopifnot(all(is.finite(as.matrix(eng_df))))
 
 # Converting to zoo for forecast
 eng_zoo <- as.zooreg(ts(eng_df, start = c(1975, 1), frequency = 4))
-
-dum  <- c("d08Q3","d20Q2","d20Q3","d23Q2","d23Q3","sd1","sd2","sd3")
+dum  <- c("sd1","sd2","sd3")
 base <- c("lrprc", "lvol", "r3", "lrcc")
-
 # Wrapper for HAC standard errors
 hac  <- function(m) NeweyWest(m, lag = 4, prewhite = FALSE)
 
@@ -117,7 +100,6 @@ run_nardl <- function(x, max_lag = 8, thresh = 0.10) {
 out <- lapply(nl_vars, run_nardl)
 names(out) <- nl_vars
 
-
 summary_tbl <- do.call(rbind, lapply(out, function(z) {
   k <- length(z$reg)
   data.frame(var = z$var, order = paste(z$order, collapse=","), k_lo = k-1, k_hi = k,
@@ -139,10 +121,5 @@ short_sum <- do.call(rbind, lapply(out, function(z) {
 }))
 
 #print(summary_tbl, row.names = FALSE, digits = 3)
-cat("================ SPEC: Full Spec ================ ")
+cat("================ SPEC: No Impulse Dummies ================ ")
 print(short_sum, row.names = FALSE, digits = 3)
-
-saveRDS(eng_zoo, "R/models/nardl_eng_zoo.rds")
-saveRDS(dum,     "R/models/nardl_dum.rds")
-saveRDS(out,     "R/models/nardl_fits.rds")
-write.csv(summary_tbl, "R/models/nardl_summary.csv", row.names = FALSE)
