@@ -1,0 +1,5 @@
+Spec,LSTM_RMSE,Naive_RMSE,Skill_Ratio
+Spec1_NoDummy,0.2798,0.2826,0.01
+Spec2_CrisisDummy,0.3361,0.2826,-0.1891
+Spec3_SeasonalDummy,0.2803,0.2826,0.0082
+Spec4_CrisisSeasonal,0.2901,0.2826,-0.0264

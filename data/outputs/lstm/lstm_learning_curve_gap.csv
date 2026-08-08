@@ -1,0 +1,5 @@
+Spec,Epochs_Run,Final_Train_Loss,Final_Val_Loss,Val_Train_Ratio
+Spec1_NoDummy,35,0.3357,2.87876,8.58
+Spec2_CrisisDummy,41,0.33061,3.72473,11.27
+Spec3_SeasonalDummy,36,0.22233,2.7458,12.35
+Spec4_CrisisSeasonal,38,0.22124,2.91571,13.18

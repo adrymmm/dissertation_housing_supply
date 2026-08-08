@@ -1,0 +1,5 @@
+Spec,LB_statistic,p_value
+Spec1_NoDummy,24.283,0.0001
+Spec2_CrisisDummy,25.345,0.0
+Spec3_SeasonalDummy,25.362,0.0
+Spec4_CrisisSeasonal,24.179,0.0001
