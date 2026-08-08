@@ -147,7 +147,7 @@ cat("d_Q3 active quarters           :", sum(df_raw$d_Q3), "\n")
 target_var      <- "lhstarts"
 continuous_vars <- c("lrprc", "lvol", "r3", "lstock", "lrcc")
 all_dummy_vars  <- c("d_covid", "d_crisis_pulse", "d_crisis_step",
-                    "d_Q1", "d_Q2", "d_Q3")
+                     "d_Q1", "d_Q2", "d_Q3")
 
 ts_cont  <- zoo(df_raw[, c(target_var, continuous_vars)], order.by = df_raw$date)
 ts_cont  <- na.approx(ts_cont, na.rm = FALSE)
@@ -344,16 +344,16 @@ predictors_spec4 <- c(continuous_vars, "d_covid", "d_crisis_pulse",
 # BLOCK 10: RUN ALL FOUR SPECIFICATIONS
 # =============================================================================
 result1 <- run_lstm_spec("Spec1_NoDummy",         predictors_spec1, df_full,
-                        target_var, continuous_vars, dates, n_train, n_obs, lookback)
+                         target_var, continuous_vars, dates, n_train, n_obs, lookback)
 
 result2 <- run_lstm_spec("Spec2_CrisisDummy",     predictors_spec2, df_full,
-                        target_var, continuous_vars, dates, n_train, n_obs, lookback)
+                         target_var, continuous_vars, dates, n_train, n_obs, lookback)
 
 result3 <- run_lstm_spec("Spec3_SeasonalDummy",   predictors_spec3, df_full,
-                        target_var, continuous_vars, dates, n_train, n_obs, lookback)
+                         target_var, continuous_vars, dates, n_train, n_obs, lookback)
 
 result4 <- run_lstm_spec("Spec4_CrisisSeasonal",  predictors_spec4, df_full,
-                        target_var, continuous_vars, dates, n_train, n_obs, lookback)
+                         target_var, continuous_vars, dates, n_train, n_obs, lookback)
 
 # =============================================================================
 # BLOCK 11: COMPARISON TABLE
@@ -364,7 +364,7 @@ comparison_table <- data.frame(
                     "Spec 3: + Seasonal dummies (Q1-Q3)",
                     "Spec 4: + Crisis + Seasonal dummies"),
   Features = c(result1$n_features, result2$n_features,
-              result3$n_features, result4$n_features),
+               result3$n_features, result4$n_features),
   RMSE  = round(c(result1$rmse, result2$rmse, result3$rmse, result4$rmse), 4),
   MAE   = round(c(result1$mae,  result2$mae,  result3$mae,  result4$mae),  4),
   MAPE  = round(c(result1$mape, result2$mape, result3$mape, result4$mape), 2),
@@ -387,9 +387,9 @@ write.csv(comparison_table, "lstm_spec_comparison.csv", row.names = FALSE)
 build_avp_data <- function(result, spec_label) {
   bind_rows(
     data.frame(Date = test_dates, Value = result$y_true,
-              Series = "Actual", Spec = spec_label),
+               Series = "Actual", Spec = spec_label),
     data.frame(Date = test_dates, Value = result$y_pred,
-              Series = "Predicted", Spec = spec_label)
+               Series = "Predicted", Spec = spec_label)
   )
 }
 
@@ -417,12 +417,12 @@ plot_data_A <- bind_rows(
   build_avp_data(result2, "Spec 2: + Crisis Dummies")
 )
 plot_data_A$Spec <- factor(plot_data_A$Spec,
-                          levels = c("Spec 1: No Dummy", "Spec 2: + Crisis Dummies"))
+                           levels = c("Spec 1: No Dummy", "Spec 2: + Crisis Dummies"))
 
 p_avp_A <- make_avp_plot(plot_data_A, "LSTM Forecast Comparison: No Dummy vs Crisis Dummies")
 print(p_avp_A)
 ggsave("lstm_avp_groupA_nodummy_vs_crisis.png", p_avp_A,
-      width = 10, height = 7, dpi = 150)
+       width = 10, height = 7, dpi = 150)
 
 # --- Group B: Seasonal vs Crisis + Seasonal ---
 plot_data_B <- bind_rows(
@@ -430,13 +430,13 @@ plot_data_B <- bind_rows(
   build_avp_data(result4, "Spec 4: + Crisis + Seasonal Dummies")
 )
 plot_data_B$Spec <- factor(plot_data_B$Spec,
-                          levels = c("Spec 3: + Seasonal Dummies",
+                           levels = c("Spec 3: + Seasonal Dummies",
                                       "Spec 4: + Crisis + Seasonal Dummies"))
 
 p_avp_B <- make_avp_plot(plot_data_B, "LSTM Forecast Comparison: Seasonal vs Crisis + Seasonal Dummies")
 print(p_avp_B)
 ggsave("lstm_avp_groupB_seasonal_vs_crisisseasonal.png", p_avp_B,
-      width = 10, height = 7, dpi = 150)
+       width = 10, height = 7, dpi = 150)
 
 # =============================================================================
 # BLOCK 13: COMBINED RESIDUAL PLOTS (SAME GROUPING)
@@ -444,7 +444,7 @@ ggsave("lstm_avp_groupB_seasonal_vs_crisisseasonal.png", p_avp_B,
 
 build_resid_data <- function(result, spec_label) {
   data.frame(Date = test_dates, Residual = result$y_true - result$y_pred,
-            Spec = spec_label)
+             Spec = spec_label)
 }
 
 make_resid_plot <- function(plot_data, title_text) {
@@ -472,7 +472,7 @@ resid_data_A$Spec <- factor(resid_data_A$Spec,
 p_resid_A <- make_resid_plot(resid_data_A, "LSTM Residuals: No Dummy vs Crisis Dummies")
 print(p_resid_A)
 ggsave("lstm_resid_groupA_nodummy_vs_crisis.png", p_resid_A,
-      width = 10, height = 7, dpi = 150)
+       width = 10, height = 7, dpi = 150)
 
 # --- Group B residuals ---
 resid_data_B <- bind_rows(
@@ -481,12 +481,12 @@ resid_data_B <- bind_rows(
 )
 resid_data_B$Spec <- factor(resid_data_B$Spec,
                             levels = c("Spec 3: + Seasonal Dummies",
-                                      "Spec 4: + Crisis + Seasonal Dummies"))
+                                       "Spec 4: + Crisis + Seasonal Dummies"))
 
 p_resid_B <- make_resid_plot(resid_data_B, "LSTM Residuals: Seasonal vs Crisis + Seasonal Dummies")
 print(p_resid_B)
 ggsave("lstm_resid_groupB_seasonal_vs_crisisseasonal.png", p_resid_B,
-      width = 10, height = 7, dpi = 150)
+       width = 10, height = 7, dpi = 150)
 
 # =============================================================================
 # BLOCK 14: COMBINED TRAINING LOSS PLOTS (SAME GROUPING)
@@ -495,11 +495,11 @@ ggsave("lstm_resid_groupB_seasonal_vs_crisisseasonal.png", p_resid_B,
 build_loss_data <- function(result, spec_label) {
   bind_rows(
     data.frame(Epoch = seq_along(result$history$metrics$loss),
-              Loss = result$history$metrics$loss,
-              Type = "Training", Spec = spec_label),
+               Loss = result$history$metrics$loss,
+               Type = "Training", Spec = spec_label),
     data.frame(Epoch = seq_along(result$history$metrics$val_loss),
-              Loss = result$history$metrics$val_loss,
-              Type = "Validation", Spec = spec_label)
+               Loss = result$history$metrics$val_loss,
+               Type = "Validation", Spec = spec_label)
   )
 }
 
@@ -523,12 +523,12 @@ loss_data_A <- bind_rows(
   build_loss_data(result2, "Spec 2: + Crisis Dummies")
 )
 loss_data_A$Spec <- factor(loss_data_A$Spec,
-                          levels = c("Spec 1: No Dummy", "Spec 2: + Crisis Dummies"))
+                           levels = c("Spec 1: No Dummy", "Spec 2: + Crisis Dummies"))
 
 p_loss_A <- make_loss_plot(loss_data_A, "LSTM Training History: No Dummy vs Crisis Dummies")
 print(p_loss_A)
 ggsave("lstm_loss_groupA_nodummy_vs_crisis.png", p_loss_A,
-      width = 9, height = 7, dpi = 150)
+       width = 9, height = 7, dpi = 150)
 
 # --- Group B training loss ---
 loss_data_B <- bind_rows(
@@ -536,13 +536,13 @@ loss_data_B <- bind_rows(
   build_loss_data(result4, "Spec 4: + Crisis + Seasonal Dummies")
 )
 loss_data_B$Spec <- factor(loss_data_B$Spec,
-                          levels = c("Spec 3: + Seasonal Dummies",
+                           levels = c("Spec 3: + Seasonal Dummies",
                                       "Spec 4: + Crisis + Seasonal Dummies"))
 
 p_loss_B <- make_loss_plot(loss_data_B, "LSTM Training History: Seasonal vs Crisis + Seasonal Dummies")
 print(p_loss_B)
 ggsave("lstm_loss_groupB_seasonal_vs_crisisseasonal.png", p_loss_B,
-      width = 9, height = 7, dpi = 150)
+       width = 9, height = 7, dpi = 150)
 
 # =============================================================================
 # BLOCK 15: SAVE INDIVIDUAL FORECASTS
@@ -666,9 +666,9 @@ run_cv_spec <- function(spec_name, predictor_vars, df_full, target_var,
     )
     
     es_cv <- callback_early_stopping(monitor = "val_loss", patience = 20,
-                                    restore_best_weights = TRUE, verbose = 0)
+                                     restore_best_weights = TRUE, verbose = 0)
     rl_cv <- callback_reduce_lr_on_plateau(monitor = "val_loss", factor = 0.5,
-                                          patience = 10, min_lr = 1e-6, verbose = 0)
+                                           patience = 10, min_lr = 1e-6, verbose = 0)
     
     invisible(capture.output(
       model_cv %>% fit(
@@ -706,9 +706,9 @@ run_cv_spec <- function(spec_name, predictor_vars, df_full, target_var,
     Spec   = spec_name,
     Metric = c("RMSE", "MAE", "MAPE", "R2"),
     Mean   = round(c(mean(cv_results$RMSE), mean(cv_results$MAE),
-                    mean(cv_results$MAPE), mean(cv_results$R2)), 4),
+                     mean(cv_results$MAPE), mean(cv_results$R2)), 4),
     SD     = round(c(sd(cv_results$RMSE), sd(cv_results$MAE),
-                    sd(cv_results$MAPE), sd(cv_results$R2)), 4)
+                     sd(cv_results$MAPE), sd(cv_results$R2)), 4)
   )
   
   cat("\n--- Cross-Validation Mean +/- SD Across Folds (", spec_name, ") ---\n")
@@ -772,3 +772,366 @@ cat("Saved: lstm_resid_groupA_nodummy_vs_crisis.png\n")
 cat("Saved: lstm_resid_groupB_seasonal_vs_crisisseasonal.png\n")
 cat("Saved: lstm_loss_groupA_nodummy_vs_crisis.png\n")
 cat("Saved: lstm_loss_groupB_seasonal_vs_crisisseasonal.png\n")
+
+
+
+# =============================================================================
+# OVERFITTING / NOISE-FITTING DIAGNOSTICS FOR YOUR LSTM PIPELINE
+#
+# HOW TO USE:
+#   1. Apply the two small edits to run_lstm_spec() marked "*** EDIT ***"
+#      below (these just add train-set predictions + the model object to
+#      the returned list - nothing about your training changes).
+#   2. Re-run Blocks 1-11 from your original script as normal.
+#   3. Paste/run this file afterwards (Block 17 onward). It reuses
+#      result1..result4, df_full, dates, n_train, target_var, etc.
+# =============================================================================
+
+# -----------------------------------------------------------------------
+# *** EDIT 1 *** - inside run_lstm_spec(), right after:
+#   y_pred_scaled <- as.vector(predict(model, X_test, verbose = 0))
+# ADD:
+#   y_train_pred_scaled <- as.vector(predict(model, X_train, verbose = 0))
+#
+# *** EDIT 2 *** - inside run_lstm_spec(), in the final `list(...)` that is
+# returned, ADD these two entries:
+#   model         = model,
+#   y_train_true  = invert_scale(y_train, target_var, scale_params),
+#   y_train_pred  = invert_scale(y_train_pred_scaled, target_var, scale_params)
+#
+# (y_train is already computed earlier in the function as the training
+# target vector, so no extra work needed there.)
+# -----------------------------------------------------------------------
+
+library(dplyr)
+library(Metrics)
+
+all_results <- list(Spec1_NoDummy = result1, Spec2_CrisisDummy = result2,
+                    Spec3_SeasonalDummy = result3, Spec4_CrisisSeasonal = result4)
+
+# =============================================================================
+# BLOCK 17: TRAIN vs TEST PERFORMANCE GAP (the core overfitting check)
+# =============================================================================
+# Rule of thumb: if Test R2 is much lower than Train R2 (e.g. Train R2 = 0.95,
+# Test R2 = 0.30), the model has memorised the training sequences rather than
+# learning generalisable structure.
+
+overfit_gap_table <- lapply(names(all_results), function(nm) {
+  res <- all_results[[nm]]
+  
+  train_rmse <- rmse(res$y_train_true, res$y_train_pred)
+  train_r2   <- 1 - sum((res$y_train_true - res$y_train_pred)^2) /
+    sum((res$y_train_true - mean(res$y_train_true))^2)
+  
+  data.frame(
+    Spec        = nm,
+    Train_RMSE  = round(train_rmse, 4),
+    Test_RMSE   = round(res$rmse, 4),
+    RMSE_Ratio  = round(res$rmse / train_rmse, 2),   # >1.5-2x is a warning sign
+    Train_R2    = round(train_r2, 4),
+    Test_R2     = round(res$r2, 4),
+    R2_Gap      = round(train_r2 - res$r2, 4)         # large positive gap = overfitting
+  )
+}) %>% bind_rows()
+
+cat("\n=========================================================\n")
+cat("  BLOCK 17: TRAIN vs TEST PERFORMANCE GAP\n")
+cat("=========================================================\n")
+print(overfit_gap_table)
+write.csv(overfit_gap_table, "lstm_overfit_gap_table.csv", row.names = FALSE)
+
+# Interpretation guide printed for convenience
+cat("\nInterpretation:\n")
+cat(" - RMSE_Ratio close to 1 = good generalisation.\n")
+cat(" - RMSE_Ratio >> 1.5-2   = overfitting to the training window.\n")
+cat(" - R2_Gap near 0         = good. R2_Gap > 0.3-0.4 = overfitting.\n")
+cat(" - Negative Test_R2      = model performs worse than predicting the mean;\n")
+cat("   strong sign it is fitting noise, not signal.\n")
+
+# =============================================================================
+# BLOCK 18: LEARNING CURVE GAP (train vs val loss at convergence)
+# =============================================================================
+learning_curve_gap <- lapply(names(all_results), function(nm) {
+  h <- all_results[[nm]]$history$metrics
+  n <- length(h$loss)
+  # average of last 10% of epochs, to avoid noise from a single epoch
+  tail_n <- max(1, floor(0.1 * n))
+  final_train_loss <- mean(tail(h$loss, tail_n))
+  final_val_loss   <- mean(tail(h$val_loss, tail_n))
+  data.frame(
+    Spec            = nm,
+    Epochs_Run      = n,
+    Final_Train_Loss = round(final_train_loss, 5),
+    Final_Val_Loss   = round(final_val_loss, 5),
+    Val_Train_Ratio  = round(final_val_loss / final_train_loss, 2)
+  )
+}) %>% bind_rows()
+
+cat("\n=========================================================\n")
+cat("  BLOCK 18: LEARNING CURVE GAP (VAL LOSS / TRAIN LOSS)\n")
+cat("=========================================================\n")
+print(learning_curve_gap)
+write.csv(learning_curve_gap, "lstm_learning_curve_gap.csv", row.names = FALSE)
+cat("\nVal_Train_Ratio near 1 = good. Consistently >1.5-2 across training = overfitting.\n")
+cat("If val_loss diverges upward while train_loss keeps falling, that's the\n")
+cat("textbook overfitting signature - check your existing loss plots for this shape.\n")
+
+# =============================================================================
+# BLOCK 19: NAIVE BENCHMARK COMPARISON (random-walk / persistence forecast)
+# =============================================================================
+# If your LSTM cannot beat "next quarter = this quarter" on the SAME test
+# window, its apparent skill is likely noise, not learned signal.
+
+naive_benchmark <- df_full[[target_var]]
+naive_test_actual <- naive_benchmark[(n_train + 1):n_obs]
+# naive prediction = value at t-1 (lagged by 1 quarter), aligned to test_dates
+naive_test_pred <- naive_benchmark[n_train:(n_obs - 1)]
+
+naive_rmse <- rmse(naive_test_actual, naive_test_pred)
+naive_mae  <- mae(naive_test_actual, naive_test_pred)
+
+cat("\n=========================================================\n")
+cat("  BLOCK 19: LSTM vs NAIVE (RANDOM-WALK) BENCHMARK\n")
+cat("=========================================================\n")
+cat(sprintf("Naive persistence RMSE: %.4f | MAE: %.4f\n", naive_rmse, naive_mae))
+
+naive_comparison <- lapply(names(all_results), function(nm) {
+  res <- all_results[[nm]]
+  data.frame(
+    Spec        = nm,
+    LSTM_RMSE   = round(res$rmse, 4),
+    Naive_RMSE  = round(naive_rmse, 4),
+    Skill_Ratio = round(1 - (res$rmse / naive_rmse), 4)  # >0 = beats naive; <=0 = doesn't
+  )
+}) %>% bind_rows()
+
+print(naive_comparison)
+write.csv(naive_comparison, "lstm_naive_benchmark_comparison.csv", row.names = FALSE)
+cat("\nSkill_Ratio > 0 means the LSTM beats a trivial persistence forecast.\n")
+cat("Skill_Ratio <= 0 is a red flag: the model adds no value over 'no change',\n")
+cat("meaning any apparent in-sample fit is likely noise.\n")
+
+# =============================================================================
+# BLOCK 20: RESIDUAL AUTOCORRELATION (Ljung-Box test)
+# =============================================================================
+# Tests whether residuals are white noise (good) vs. still contain
+# structure the model failed to capture (bad fit, not necessarily overfit).
+
+ljung_box_table <- lapply(names(all_results), function(nm) {
+  res <- all_results[[nm]]
+  resid <- res$y_true - res$y_pred
+  lb <- Box.test(resid, lag = min(4, length(resid) - 1), type = "Ljung-Box")
+  data.frame(Spec = nm, LB_statistic = round(lb$statistic, 3),
+             p_value = round(lb$p.value, 4))
+}) %>% bind_rows()
+
+cat("\n=========================================================\n")
+cat("  BLOCK 20: LJUNG-BOX TEST ON TEST RESIDUALS\n")
+cat("=========================================================\n")
+print(ljung_box_table)
+write.csv(ljung_box_table, "lstm_ljung_box_residuals.csv", row.names = FALSE)
+cat("\np-value < 0.05: residuals show significant autocorrelation - the model\n")
+cat("left exploitable structure on the table (underfitting some signal).\n")
+cat("p-value > 0.05: residuals look like white noise - no leftover structure.\n")
+
+# =============================================================================
+# BLOCK 21: PLACEBO / SHUFFLED-TARGET TEST (the strongest overfitting check)
+# =============================================================================
+# Refit the SAME architecture on a randomly shuffled target. A model that is
+# genuinely learning signal should perform close to random (R2 near 0 or
+# negative) on shuffled data. If it still achieves a suspiciously good test
+# R2 here, the architecture/training setup is capable of fitting pure noise,
+# which means your real result may be doing the same thing.
+#
+# NOTE: only run this for your best/main specification (e.g. Spec 4) - it
+# retrains a model so it is slow. Loop over all specs if you have time.
+
+run_placebo_test <- function(predictor_vars, df_full, target_var,
+                             continuous_vars, n_train, n_obs, lookback,
+                             n_repeats = 3) {
+  
+  set.seed(123)
+  placebo_r2s <- numeric(n_repeats)
+  
+  for (r in 1:n_repeats) {
+    
+    df_shuffled <- df_full
+    # shuffle ONLY the target column, within the training portion, to break
+    # any true relationship with predictors while preserving predictor structure
+    df_shuffled[[target_var]] <- sample(df_full[[target_var]])
+    
+    all_vars <- c(target_var, predictor_vars)
+    train_raw <- df_shuffled[1:n_train, ]
+    scale_params <- list()
+    for (v in c(target_var, continuous_vars)) {
+      scale_params[[v]] <- list(mean = mean(train_raw[[v]], na.rm = TRUE),
+                                sd = sd(train_raw[[v]], na.rm = TRUE))
+    }
+    df_scaled <- df_shuffled
+    for (v in c(target_var, continuous_vars)) {
+      df_scaled[[v]] <- (df_shuffled[[v]] - scale_params[[v]]$mean) / scale_params[[v]]$sd
+    }
+    
+    create_sequences <- function(data_matrix, target_col_idx, lookback) {
+      n <- nrow(data_matrix); n_features <- ncol(data_matrix); n_samples <- n - lookback
+      X <- array(0, dim = c(n_samples, lookback, n_features)); y <- numeric(n_samples)
+      for (i in seq_len(n_samples)) {
+        X[i, , ] <- data_matrix[i:(i + lookback - 1), ]
+        y[i] <- data_matrix[i + lookback, target_col_idx]
+      }
+      list(X = X, y = y)
+    }
+    
+    data_matrix <- as.matrix(df_scaled[, all_vars])
+    target_col_idx <- which(colnames(data_matrix) == target_var)
+    seqs <- create_sequences(data_matrix, target_col_idx, lookback)
+    
+    n_train_seq <- n_train - lookback
+    X_train <- seqs$X[1:n_train_seq, , , drop = FALSE]
+    y_train <- seqs$y[1:n_train_seq]
+    X_test  <- seqs$X[(n_train_seq + 1):dim(seqs$X)[1], , , drop = FALSE]
+    y_test  <- seqs$y[(n_train_seq + 1):length(seqs$y)]
+    
+    tensorflow::set_random_seed(42)
+    model <- keras_model_sequential() %>%
+      layer_lstm(units = 64, input_shape = c(lookback, dim(X_train)[3]),
+                 dropout = 0.1, recurrent_dropout = 0.1, return_sequences = FALSE) %>%
+      layer_dense(units = 1, activation = "linear")
+    
+    model %>% compile(optimizer = optimizer_adam(learning_rate = 0.001),
+                      loss = "mean_squared_error")
+    
+    invisible(capture.output(
+      model %>% fit(x = X_train, y = y_train, epochs = 150, batch_size = 16,
+                    validation_split = 0.15,
+                    callbacks = list(
+                      callback_early_stopping(monitor = "val_loss", patience = 20,
+                                              restore_best_weights = TRUE),
+                      callback_reduce_lr_on_plateau(monitor = "val_loss", factor = 0.5,
+                                                    patience = 10, min_lr = 1e-6)
+                    ),
+                    shuffle = FALSE, verbose = 0)
+    ))
+    
+    pred <- as.vector(predict(model, X_test, verbose = 0))
+    inv <- function(x) x * scale_params[[target_var]]$sd + scale_params[[target_var]]$mean
+    pred_o <- inv(pred); y_o <- inv(y_test)
+    
+    ss_res <- sum((y_o - pred_o)^2); ss_tot <- sum((y_o - mean(y_o))^2)
+    placebo_r2s[r] <- 1 - ss_res / ss_tot
+    
+    cat(sprintf("  Placebo repeat %d/%d: shuffled-target Test R2 = %.4f\n",
+                r, n_repeats, placebo_r2s[r]))
+  }
+  placebo_r2s
+}
+
+cat("\n=========================================================\n")
+cat("  BLOCK 21: PLACEBO TEST (SHUFFLED TARGET) - Spec 4\n")
+cat("=========================================================\n")
+cat("Retraining on a randomly shuffled target - this should perform near-random.\n")
+
+placebo_r2_spec4 <- run_placebo_test(predictors_spec4, df_full, target_var,
+                                     continuous_vars, n_train, n_obs, lookback,
+                                     n_repeats = 3)
+
+cat(sprintf("\nMean placebo Test R2 (shuffled target): %.4f (SD: %.4f)\n",
+            mean(placebo_r2_spec4), sd(placebo_r2_spec4)))
+cat(sprintf("Actual model Test R2 (Spec 4, real target): %.4f\n", result4$r2))
+cat("\nInterpretation: placebo R2 should be near 0 or negative. If it comes back\n")
+cat("meaningfully positive (e.g. > 0.15-0.2), the architecture can fit pure noise\n")
+cat("under your current setup (lookback, sample size, epochs), which means your\n")
+cat("real R2 needs to be read with real skepticism, not taken at face value.\n")
+
+# =============================================================================
+# BLOCK 22: PARAMETER COUNT vs SAMPLE SIZE (structural red-flag check)
+# =============================================================================
+cat("\n=========================================================\n")
+cat("  BLOCK 22: PARAMETER COUNT vs TRAINING SAMPLE SIZE\n")
+cat("=========================================================\n")
+
+param_table <- lapply(names(all_results), function(nm) {
+  res <- all_results[[nm]]
+  n_params <- res$model$count_params()
+  n_train_seq <- n_train - lookback
+  data.frame(Spec = nm, N_Params = n_params, N_Train_Sequences = n_train_seq,
+             Params_per_Sample = round(n_params / n_train_seq, 2))
+}) %>% bind_rows()
+
+print(param_table)
+write.csv(param_table, "lstm_param_vs_sample_size.csv", row.names = FALSE)
+cat("\nAs a rough guideline, having more than ~1 parameter per training sample\n")
+cat("(let alone several times more) is a classic overfitting risk in small-data\n")
+cat("deep learning, regardless of what regularisation (dropout) is applied.\n")
+cat("Given quarterly UK data, your N_Train_Sequences is likely well under 200,\n")
+cat("so check this ratio carefully.\n")
+
+# =============================================================================
+# SUMMARY: WHAT TO LOOK AT, IN ORDER
+# =============================================================================
+cat("\n\n=========================================================\n")
+cat("  HOW TO READ THESE DIAGNOSTICS TOGETHER\n")
+cat("=========================================================\n")
+cat("1. Block 22 (Params vs N): if params/sample >> 1, treat everything below\n")
+cat("   with caution from the outset - the model has the CAPACITY to overfit.\n")
+cat("2. Block 17+18 (Train/Test gap, Val/Train loss gap): a large gap is\n")
+cat("   overfitting to the specific training window.\n")
+cat("3. Block 19 (Naive benchmark): if you don't beat 'no change', any fit\n")
+cat("   is noise, whether or not Blocks 17-18 look fine.\n")
+cat("4. Block 21 (Placebo/shuffled test): the decisive test - if the SAME\n")
+cat("   setup gets a good R2 on a target with no real relationship to the\n")
+cat("   predictors, your real R2 is not trustworthy on its own.\n")
+cat("5. Block 20 (Ljung-Box): separate issue - tells you about remaining\n")
+cat("   signal, not about overfitting per se.\n")
+
+# =============================================================================
+# BLOCK 23: COMBINED LEARNING CURVE PLOT - ALL 4 SPECS TOGETHER
+# =============================================================================
+# Unlike Block 14 (which splits into Group A / Group B), this puts all four
+# specifications' training and validation loss curves in a single figure
+# (2x2 facet grid) for direct side-by-side comparison of convergence
+# behaviour and overfitting shape (val_loss diverging while train_loss falls).
+
+build_loss_data_all <- function(result, spec_label) {
+  bind_rows(
+    data.frame(Epoch = seq_along(result$history$metrics$loss),
+               Loss = result$history$metrics$loss,
+               Type = "Training", Spec = spec_label),
+    data.frame(Epoch = seq_along(result$history$metrics$val_loss),
+               Loss = result$history$metrics$val_loss,
+               Type = "Validation", Spec = spec_label)
+  )
+}
+
+loss_data_all <- bind_rows(
+  build_loss_data_all(result1, "Spec 1: No Dummy"),
+  build_loss_data_all(result2, "Spec 2: + Crisis Dummies"),
+  build_loss_data_all(result3, "Spec 3: + Seasonal Dummies"),
+  build_loss_data_all(result4, "Spec 4: + Crisis + Seasonal Dummies")
+)
+
+loss_data_all$Spec <- factor(
+  loss_data_all$Spec,
+  levels = c("Spec 1: No Dummy", "Spec 2: + Crisis Dummies",
+             "Spec 3: + Seasonal Dummies", "Spec 4: + Crisis + Seasonal Dummies")
+)
+
+p_loss_all <- ggplot(loss_data_all, aes(x = Epoch, y = Loss, colour = Type)) +
+  geom_line(linewidth = 0.8) +
+  scale_colour_manual(values = c("Training" = "steelblue", "Validation" = "tomato")) +
+  facet_wrap(~ Spec, ncol = 2, scales = "free_x") +
+  labs(
+    title = "LSTM Learning Curves: All 4 Specifications",
+    subtitle = "Training vs Validation Loss by Epoch",
+    x = "Epoch", y = "MSE Loss", colour = NULL
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom",
+        strip.text = element_text(face = "bold"))
+
+print(p_loss_all)
+ggsave("lstm_learning_curves_all_specs.png", p_loss_all,
+       width = 11, height = 8, dpi = 150)
+
+cat("\nSaved: lstm_learning_curves_all_specs.png\n")
+
