@@ -6,23 +6,32 @@ sys.path.append(str(ROOT))
 
 import numpy as np
 import pandas as pd
-from python.functions.forecast import quarter_str_from_dates, plot_rmse_bar, report
+from python.functions.forecast import quarter_str_from_dates, plot_rmse_bar, report, run_ljungbox, run_mcs, run_spa
 
-# IMPORTANT: RUN 08_horse_race.R first for h1_forecasts.csv
+
+# IMPORTANT: RUN 08_horse_race.R first for h1_forecasts.csv + h1_model_roles.csv
 
 # --- CONFIG ---
 FORECASTS_DIR = ROOT / "data" / "outputs" / "forecasts"
 FIGURES_DIR = ROOT / "data" / "outputs" / "figures"
 
-UNCOND = ["RW", "SNAIVE", "AR", "TSLM", "TSLM_s", "VECM"]
-COND = ["ARDL", "NARDL", "Ensemble_avg", "Ensemble_invmse"]
-ML = ["ARRF", "LSTM", "Chronos"]
-BENCHMARKS = ["RW", "SNAIVE"]
+# Column roles, matching the R script:
+#   *_rw    RW projections -- unconditional
+#   *_dir   h=1 reparameterisation -- unconditional
+#   *_cond  actual covariates at t+1 -- ex post, conditional
+BENCH = ["RW", "SNAIVE", "AR", "TSLM", "TSLM_s"]
+ML_TESTED = ["ARRF", "LSTM"]
+ML_ALL = ML_TESTED + ["Chronos"]          # Chronos out: no forward projection
+ENSEMBLE = ["Ensemble_avg", "Ensemble_invmse"]
+COND_EXPOST = ["ARDL_cond", "NARDL_cond"]
 
-# Chronos out since it cant predict forward
-MCS_MODELS = [m for m in UNCOND + ML if m != "Chronos"]
+VARIANTS = {
+    "rw":  ("ARDL_rw", "NARDL_rw"),
+    "dir": ("ARDL_dir", "NARDL_dir"),
+}
+HEADLINE_VARIANT = "rw"
 
-BLEND_MODELS = ["VECM", "ARDL", "NARDL", "ARRF", "LSTM"]
+SPA_BENCHMARKS = ["RW"]
 WARMUP = 8
 EXCLUDE_QUARTERS = ["2020Q2", "2020Q3"]
 
@@ -38,9 +47,24 @@ SOURCES = [
     ("TSLM", "h1_forecasts.csv", "date", "tslm", "actual", True),
     ("TSLM_s", "h1_forecasts.csv", "date", "tslm_s", "actual", True),
     ("VECM", "h1_forecasts.csv", "date", "vecm", "actual", True),
-    ("ARDL", "h1_forecasts.csv", "date", "ardl", "actual", True),
-    ("NARDL", "h1_forecasts.csv", "date", "nardl", "actual", True),
+    ("ARDL_rw", "h1_forecasts.csv", "date", "ardl_rw", "actual", True),
+    ("NARDL_rw", "h1_forecasts.csv", "date", "nardl_rw", "actual", True),
+    ("ARDL_dir", "h1_forecasts.csv", "date", "ardl_dir", "actual", True),
+    ("NARDL_dir", "h1_forecasts.csv", "date", "nardl_dir", "actual", True),
+    ("ARDL_cond", "h1_forecasts.csv", "date", "ardl_cond", "actual", True),
+    ("NARDL_cond", "h1_forecasts.csv", "date", "nardl_cond", "actual", True),
 ]
+
+
+roles = pd.read_csv(FORECASTS_DIR / "h1_model_roles.csv").set_index("model")["role"]
+role_of = {name: roles.get(pcol)
+           for (name, fname, _, pcol, _, _) in SOURCES
+           if fname == "h1_forecasts.csv"}
+assert all(role_of.get(m) == "conditional" for m in COND_EXPOST), \
+    f"expected conditional role for {COND_EXPOST}, got {role_of}"
+assert all(role_of.get(m) in ("model_set", "robust_swap")
+           for v in VARIANTS.values() for m in v), \
+    f"a tested ARDL/NARDL column is not unconditional: {role_of}"
 
 # Load, merge and chronologize
 merged = None
@@ -63,8 +87,15 @@ for c in actual_cols[1:]:
 # Check if RW in python aligns with RW in R
 assert np.allclose(merged["RW_py"], merged["RW"], atol=1e-6), "Python and R RW series misaligned!"
 
+# RMSE gap between conditional and RW projected
+for u, c in [("ARDL_rw", "ARDL_cond"), ("NARDL_rw", "NARDL_cond")]:
+    r_u = np.sqrt(np.nanmean((actual - merged[u].to_numpy(float)) ** 2))
+    r_c = np.sqrt(np.nanmean((actual - merged[c].to_numpy(float)) ** 2))
+    print(f"lookahead value  {u:10s} {r_u:.4f}  vs  {c:11s} {r_c:.4f}"
+          f"   ({100 * (r_u - r_c) / r_u:+.1f}% RMSE)")
 
-def invmse_ensemble(preds, warmup, weight_mask):
+
+def invmse_ensemble(preds, actual, warmup, weight_mask):
     """Expanding-window inverse-MSE weights. nanmean, so a model with a NaN
     in its history is skipped at that t rather than poisoning every later
     weight. weight_mask restricts the weighting history to the evaluation
@@ -80,20 +111,56 @@ def invmse_ensemble(preds, warmup, weight_mask):
     return out
 
 
-blend_preds = merged[BLEND_MODELS].to_numpy(dtype=float)
-merged["Ensemble_avg"] = np.nanmean(blend_preds, axis=1)
-
 full_mask = np.ones(len(merged), dtype=bool)
 excov_mask = ~merged["Quarter"].isin(EXCLUDE_QUARTERS).to_numpy()
 
+PLOT_NOTE = ("Ex post columns (ARDL_cond, NARDL_cond) omitted: conditioned on "
+             "realised covariates at t+1, not comparable on the same "
+             "information set.")
+
 results = {}
-for label, mask, fig_title in [
-    ("Full sample", full_mask, "Forecast RMSE - Full Sample"),
-    ("Excluding COVID (2020Q2-Q3)", excov_mask, "Forecast RMSE - Excluding COVID"),
-]:
-    m = merged.copy()
-    m["Ensemble_invmse"] = invmse_ensemble(blend_preds, WARMUP, mask)
-    res = report(actual, m, mask, label, uncond=UNCOND, cond=COND, ml=ML,
-                 benchmarks=BENCHMARKS, mcs_models=MCS_MODELS)
-    plot_rmse_bar(res["errs"], FIGURES_DIR, title=fig_title)
-    results[label] = res
+
+for vkey, (ardl_col, nardl_col) in VARIANTS.items():
+    struct = ["VECM", ardl_col, nardl_col]
+    blend = struct + ML_TESTED
+    blend_preds = merged[blend].to_numpy(dtype=float)
+
+    mcs_models = BENCH + struct + ML_TESTED
+    spa_models = mcs_models + ENSEMBLE
+
+    panels = [
+        ("Unconditional benchmarks", BENCH),
+        ("Unconditional structural", struct),
+        ("ML", ML_ALL),
+        ("Ensembles", ENSEMBLE),
+        ("Ex post (conditional, not tested)", COND_EXPOST),
+    ]
+
+    for label, mask, fig_title in [
+        ("Full sample", full_mask, "Forecast RMSE - Full Sample"),
+        ("Excluding COVID (2020Q2-Q3)", excov_mask, "Forecast RMSE - Excluding COVID"),
+    ]:
+        m = merged.copy()
+        m["Ensemble_avg"] = np.nanmean(blend_preds, axis=1)
+        m["Ensemble_invmse"] = invmse_ensemble(blend_preds, actual, WARMUP, mask)
+
+        res = report(actual, m, mask, f"{label} [variant={vkey}]",
+                     panels=panels, mcs_models=mcs_models,
+                     spa_benchmarks=SPA_BENCHMARKS, spa_models=spa_models)
+        results[(vkey, label)] = res
+
+        if vkey == HEADLINE_VARIANT:    
+            lb = run_ljungbox(res["errs"], mcs_models + ENSEMBLE)
+            print(f"\n  [Ljung-Box, {label}]")
+            print(lb.to_string(index=False))
+            plot_rmse_bar(res["errs"], FIGURES_DIR, title=fig_title,
+                          exclude=COND_EXPOST, note=PLOT_NOTE)
+
+            # Testing block 4
+            for loss in ("sq", "abs"):
+                spa4 = run_spa(res["errs"], "RW", spa_models, loss=loss, block_size=4)
+                mcs4 = run_mcs(res["errs"], mcs_models, loss=loss, block_size=4)
+                name = "MSE" if loss == "sq" else "MAE"
+                print(f"\n  [block_size=4, {name}] p(consistent)={spa4['pvalues']['consistent']:.3f}"
+                    f"  better than RW: {', '.join(spa4['better']) or 'none'}")
+                print(mcs4.to_string(index=False))
