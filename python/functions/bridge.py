@@ -1,4 +1,3 @@
-
 import pandas as pd
 import numpy as np
 import json
@@ -29,6 +28,7 @@ def parse_quarter(x):
 
     return pd.Period(year=year, quarter=q, freq="Q")
 
+
 def build_bridge_inputs(base="../.."):
     fy_map = lambda q: q.year - 1 if q.quarter == 1 else q.year
     p = json.load(open(f"{base}/data/processed/bridge_params.json"))
@@ -58,6 +58,7 @@ def build_bridge_inputs(base="../.."):
     return dict(p=p, seasonal=seasonal, seed=seed, fy_map=fy_map,
                 net_add=net_add, actual_back=actual_back, lt120=lt120)
 
+
 def run_bridge(path, log_col, seed, p, seasonal, fy_map, net_add, actual_back, strip_space=False):
     fc = path.copy() if isinstance(path, pd.DataFrame) else pd.read_csv(path)
     if strip_space:
@@ -86,6 +87,7 @@ def run_bridge(path, log_col, seed, p, seasonal, fy_map, net_add, actual_back, s
             "2027-28": annual.loc[2027, "net_additions"],
             "2028-29": annual.loc[2028, "net_additions"]}
 
+
 def _short_run_terms(ecm, var):
     terms = {}
     key0 = f"d({var})"
@@ -98,7 +100,14 @@ def _short_run_terms(ecm, var):
             terms[int(m.group(1))] = ecm[k]
     return terms
 
-def compute_d_lhstarts(window, new_exog, theta_price_mult, ecm, lr, lrprc_t0=None):
+
+def _seasonal_term(ecm, quarter):
+    """Centred seasonals"""
+    return sum(ecm[f"sd{j}"] * ((quarter == j) - 0.25) for j in (1, 2, 3))
+
+
+def compute_d_lhstarts(window, new_exog, theta_price_mult, ecm, lr,
+                       lrprc_t0=None, quarter=None):
     w = window  # w[0]=t-4 ... w[-1]=t-1
     max_lag = len(w) - 1
 
@@ -137,22 +146,33 @@ def compute_d_lhstarts(window, new_exog, theta_price_mult, ecm, lr, lrprc_t0=Non
                                   f"covers lags up to {max_lag} - extend the window.")
             d_lhstarts_t += coef * diffs[var][lag]
 
+    d_lhstarts_t += _seasonal_term(ecm, quarter)
+
     d_lhstarts_t += ecm["ect"] * ect_lag1
     return d_lhstarts_t
 
+
 def run_scenario(theta_price_mult, init_df, obr_df, ecm, lr):
+    unused = [k for k in ecm.index if not k.startswith("d(")
+              and k not in {"(Intercept)", "ect", "sd1", "sd2", "sd3",
+                            "d08Q3", "d20Q2", "d20Q3", "d23Q2", "d23Q3"}]
+    assert not unused, f"unhandled ECM terms: {unused}"
+
     window = init_df.to_dict("records")
     lrprc_t0 = window[-1]["lrprc"]  # 2025Q4 anchor price, shared across scenarios
 
     results = []
     for t in range(len(obr_df)):
-        new_exog = obr_df.iloc[t][["lrprc", "lvol", "r3", "lrcc"]].to_dict()
+        row = obr_df.iloc[t]
+        new_exog = row[["lrprc", "lvol", "r3", "lrcc"]].to_dict()
+        quarter = pd.Period(row["period"], freq="Q").quarter
 
-        d_lhstarts = compute_d_lhstarts(window, new_exog, theta_price_mult, ecm, lr, lrprc_t0)
+        d_lhstarts = compute_d_lhstarts(window, new_exog, theta_price_mult, ecm, lr,
+                                        lrprc_t0, quarter=quarter)
         lhstarts_t = window[-1]["lhstarts"] + d_lhstarts
 
         window = window[1:] + [{**new_exog, "lhstarts": lhstarts_t}]
-        results.append({"period": obr_df.iloc[t]["period"], "lhstarts": lhstarts_t})
+        results.append({"period": row["period"], "lhstarts": lhstarts_t})
 
     return pd.DataFrame(results)
 
@@ -164,7 +184,8 @@ def backtest_one_step(master, target_period, ecm, lr):
     actual_row = master.iloc[idx]
     new_exog = actual_row[["lrprc", "lvol", "r3", "lrcc"]].to_dict()
 
-    predicted_d = compute_d_lhstarts(window, new_exog, 1.00, ecm, lr)
+    predicted_d = compute_d_lhstarts(window, new_exog, 1.00, ecm, lr,
+                                     quarter=pd.Period(target_period, freq="Q").quarter)
     actual_d = actual_row["lhstarts"] - window[-1]["lhstarts"]
 
     print(f"Target: {target_period}")
