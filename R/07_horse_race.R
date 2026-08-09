@@ -18,7 +18,6 @@ dts <- as.yearqtr(as.numeric(zoo::index(eng_zoo)))
 n   <- nrow(dat)
 
 # CONFIG
-# K, R_RANK, ord_* fixed from full sample; coefficients re-estimated per origin
 y_name    <- "lhstarts"
 K         <- 5L
 R_RANK    <- 1L
@@ -29,6 +28,7 @@ seas      <- c("sd1", "sd2", "sd3")
 stopifnot(all(c(y_name, dum, seas) %in% names(dat)))
 yv <- dat[[y_name]]
 
+# Expanding evaluation window
 eval0 <- which(dts == as.yearqtr("2010 Q1"))
 stopifnot(length(eval0) == 1)
 origin_set <- (eval0 - 1):(n - 1)
@@ -39,7 +39,7 @@ cat(sprintf("Origins %d..%d  ->  targets %s .. %s\n",
             as.character(dts[max(origin_set) + 1])))
 
 
-# VECM: six variables in jo_eng's own column order (includes lstock).
+# VECM: six variables in jo_eng column order
 vecm_vars <- colnames(jo_eng@x)
 stopifnot(all(vecm_vars %in% names(dat)), vecm_vars[1] == y_name)
 
@@ -50,10 +50,7 @@ stopifnot(!is.null(names(ardl_best$order)),
           names(ardl_best$order)[1] == y_name,
           all(ardl_x %in% names(dat)))
 
-# NARDL: pull the gts-selected fit out of whatever run_nardl() named it, then
-# read both the order AND the regressor names off it. That way the positional
-# c(x_pos, x_neg, setdiff(base, x)) convention in nardl_functions.R never has to
-# be replicated here.
+# NARDL: pull the gts-selected fit
 as_ardl <- function(x) {
   if (inherits(x, "ardl")) return(x)
   if (!is.null(x$fit) && inherits(x$fit, "ardl")) return(x$fit)
@@ -74,12 +71,18 @@ cat("NARDL: ", paste(nardl_x, collapse = " + "), " | ",
 # ---- ARDL-family one-step forecasts ------------------------------------
 lagv <- function(x, k) if (k == 0L) x else c(rep(NA_real_, k), head(x, -k))
 
-design <- function(dat, y, xs, ord, fixed) {
+# contemp = TRUE  -> Conditional / ex post.
+# contemp = FALSE -> Direct (h = 1) predictive reparameterisation.
+design <- function(dat, y, xs, ord, fixed, contemp = TRUE) {
   stopifnot(length(ord) == 1L + length(xs))
   cl <- list()
   for (k in seq_len(ord[1])) cl[[sprintf("L(%s, %d)", y, k)]] <- lagv(dat[[y]], k)
-  for (j in seq_along(xs)) for (k in 0:ord[j + 1L])
-    cl[[sprintf("L(%s, %d)", xs[j], k)]] <- lagv(dat[[xs[j]]], k)
+  k0 <- if (contemp) 0L else 1L
+  for (j in seq_along(xs)) {
+    if (ord[j + 1L] >= k0)                       # guard: k0:0 would give c(1,0)
+      for (k in k0:ord[j + 1L])
+        cl[[sprintf("L(%s, %d)", xs[j], k)]] <- lagv(dat[[xs[j]]], k)
+  }
   for (f in fixed) cl[[f]] <- dat[[f]]
   cbind(`(Intercept)` = 1, as.matrix(as.data.frame(cl, check.names = FALSE)))
 }
@@ -98,14 +101,37 @@ fit_fc1 <- function(X, yv, o) {
   list(fc = sum(Xi[o + 1L, ] * b), k = ncol(Xi))
 }
 
-X_ardl  <- design(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas))
-X_nardl <- design(dat, y_name, nardl_x, ord_nardl, c(dum, seas))
+# RW closure
+project_rw <- function(dat, xs, o) {
+  for (x in xs) dat[[x]][o + 1L] <- dat[[x]][o]
+  dat
+}
 
-# Validation: manual design must reproduce ardl_best coefs
+fc1_rw <- function(dat, y, xs, ord, fixed, yv, o) {
+  fit_fc1(design(project_rw(dat, xs, o), y, xs, ord, fixed, contemp = TRUE),
+          yv, o)$fc
+}
+
+X_ardl_cond  <- design(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), contemp = TRUE)
+X_nardl_cond <- design(dat, y_name, nardl_x, ord_nardl, c(dum, seas), contemp = TRUE)
+X_ardl_dir   <- design(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), contemp = FALSE)
+X_nardl_dir  <- design(dat, y_name, nardl_x, ord_nardl, c(dum, seas), contemp = FALSE)
+
 local({
-  f  <- fit_fc1(X_ardl, yv, n - 1L)  # coefficients only; the forecast is discarded
-  ok <- stats::complete.cases(X_ardl) & !is.na(yv)
-  b  <- qr.coef(qr(X_ardl[ok, , drop = FALSE]), yv[ok])
+  drop_msg <- function(xs, ord, label) {
+    gone <- xs[ord[-1] < 1L]
+    if (length(gone))
+      cat(sprintf("NOTE  %s direct spec drops (order 0 only): %s\n",
+                  label, paste(gone, collapse = ", ")))
+  }
+  drop_msg(ardl_x,  ord_ardl,  "ARDL ")
+  drop_msg(nardl_x, ord_nardl, "NARDL")
+})
+
+# Validation: manual conditional design must reproduce ardl_best coefs
+local({
+  ok <- stats::complete.cases(X_ardl_cond) & !is.na(yv)
+  b  <- qr.coef(qr(X_ardl_cond[ok, , drop = FALSE]), yv[ok])
   names(b) <- sub("^L\\((.*), 0\\)$", "\\1", names(b))
   ref <- coef(ardl_best)
   sh  <- intersect(names(b), names(ref))
@@ -113,6 +139,27 @@ local({
               length(sh), length(ref), max(abs(b[sh] - ref[sh]))))
   if (length(sh) != length(ref) || max(abs(b[sh] - ref[sh])) > 1e-8)
     warning("manual ARDL design does not reproduce ardl_best -- check `design()`")
+})
+
+# ---- information-set assertion -----------------------------------------
+local({
+  o  <- max(origin_set) - 4L
+  xp <- intersect(ardl_x, nardl_x)[1]
+  stopifnot(!is.na(xp))
+  d2 <- dat; d2[[xp]][o + 1L] <- d2[[xp]][o + 1L] + 1
+  
+  probe <- function(dd) c(
+    cond_a = fit_fc1(design(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), TRUE),  yv, o)$fc,
+    dir_a  = fit_fc1(design(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), FALSE), yv, o)$fc,
+    dir_n  = fit_fc1(design(dd, y_name, nardl_x, ord_nardl, c(dum, seas), FALSE), yv, o)$fc,
+    rw_a   = fc1_rw(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), yv, o),
+    rw_n   = fc1_rw(dd, y_name, nardl_x, ord_nardl, c(dum, seas), yv, o)
+  )
+  d <- probe(d2) - probe(dat)
+  cat(sprintf("leak probe on %s at target: cond %+.4f | dir %.2e/%.2e | rw %.2e/%.2e\n",
+              xp, d[["cond_a"]], d[["dir_a"]], d[["dir_n"]], d[["rw_a"]], d[["rw_n"]]))
+  stopifnot(abs(d[["cond_a"]]) > 1e-6)                     # test not vacuous
+  stopifnot(all(abs(d[c("dir_a", "dir_n", "rw_a", "rw_n")]) < 1e-10))
 })
 
 # ---- VECM one-step forecast --------------------------------------------
@@ -124,8 +171,11 @@ vecm_fc1 <- function(o) {
   jo <- ca.jo(Xv[1:o, , drop = FALSE], type = "trace", ecdet = "none", K = K,
               spec = "transitory", season = 4,
               dumvar = Dv[1:o, keep, drop = FALSE])
-
+  
+  # tail(.., 4)[1, ] is o-3, the same quarter as o+1, so the centred seasonals
+  # line up. Guard against a urca change in how season=4 folds into @dumvar.
   dv <- tail(jo@dumvar, 4)[1, , drop = FALSE]
+  stopifnot(ncol(dv) == ncol(jo@dumvar), ncol(dv) >= length(keep))
   dv[, intersect(colnames(dv), dum)] <- 0
   i1 <- grep("r <= 1", rownames(jo@cval))
   data.frame(
@@ -155,18 +205,32 @@ uncond_fc <- eng_tsbl %>%
   dplyr::select(origin, model = .model, fc = .mean) %>%
   pivot_wider(names_from = model, values_from = fc)
 
-# ---- conditional models ------------------------------------------------
-cond_fc <- do.call(rbind, lapply(origin_set, function(o) {
-  cbind(data.frame(origin = o,
-                   ardl  = fit_fc1(X_ardl,  yv, o)$fc,
-                   nardl = fit_fc1(X_nardl, yv, o)$fc),
-        vecm_fc1(o))
+# ---- ARDL-family and VECM ----------------------------------------------
+struct_fc <- do.call(rbind, lapply(origin_set, function(o) {
+  cbind(
+    data.frame(
+      origin     = o,
+      # unconditional: information dated o only
+      ardl_rw    = fc1_rw(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), yv, o),
+      nardl_rw   = fc1_rw(dat, y_name, nardl_x, ord_nardl, c(dum, seas), yv, o),
+      ardl_dir   = fit_fc1(X_ardl_dir,   yv, o)$fc,
+      nardl_dir  = fit_fc1(X_nardl_dir,  yv, o)$fc,
+      # conditional: sees realised covariates at o+1. Reported, not tested.
+      ardl_cond  = fit_fc1(X_ardl_cond,  yv, o)$fc,
+      nardl_cond = fit_fc1(X_nardl_cond, yv, o)$fc
+    ),
+    vecm_fc1(o)
+  )
 }))
 
 # ---- assemble ----------------------------------------------------------
-mcols <- c("rw", "snaive", "ar", "tslm", "tslm_s", "vecm", "ardl", "nardl")
+BENCH      <- c("rw", "snaive", "ar", "tslm", "tslm_s")
+MODEL_SET  <- c(BENCH, "vecm", "ardl_rw",  "nardl_rw")
+ROBUST_SWAP<- c(BENCH, "vecm", "ardl_dir", "nardl_dir")
+COND_ONLY  <- c("ardl_cond", "nardl_cond")
+mcols      <- unique(c(MODEL_SET, ROBUST_SWAP, COND_ONLY))
 
-res <- full_join(uncond_fc, cond_fc, by = "origin") %>%
+res <- full_join(uncond_fc, struct_fc, by = "origin") %>%
   mutate(target = origin + 1,
          actual = yv[target],
          date = as.character(as.Date(dts[target])),
@@ -177,18 +241,25 @@ res <- full_join(uncond_fc, cond_fc, by = "origin") %>%
 stopifnot(!any(is.na(res[, mcols])))
 
 cat(sprintf("\nr<=1 rejected at 5%% in %d of %d origins\n",
-            sum(cond_fc$trace_r1 > cond_fc$cv5_r1, na.rm = TRUE),
-            nrow(cond_fc)))
+            sum(struct_fc$trace_r1 > struct_fc$cv5_r1, na.rm = TRUE),
+            nrow(struct_fc)))
 
-dir.create("data/outputs/forecasts", recursive = TRUE, showWarnings = FALSE)
+cat("\nRMSE (full window):\n")
+print(round(sqrt(colMeans((res[, mcols] - res$actual)^2)), 4))
+cat("\nRMSE (ex dummy targets):\n")
+print(round(sqrt(colMeans((res[!res$dummy_target, mcols] -
+                             res$actual[!res$dummy_target])^2)), 4))
+
 write.csv(res, "data/outputs/forecasts/h1_forecasts.csv", row.names = FALSE)
-write.csv(cond_fc %>% mutate(date = as.character(as.Date(dts[origin + 1]))),
-          "data/outputs/forecasts/h1_vecm_rank_trace.csv", row.names = FALSE)
+write.csv(
+  data.frame(
+    model = mcols,
+    role  = ifelse(mcols %in% COND_ONLY, "conditional",
+                   ifelse(mcols %in% MODEL_SET, "model_set", "robust_swap")),
+    benchmark = mcols %in% "rw"
+  ),
+  "data/outputs/forecasts/h1_model_roles.csv", row.names = FALSE
+)
 
-# NOTE ON THE CONDITIONING ASYMMETRY (unchanged from the previous version, still
-# unresolved). ardl/nardl see realised covariates at o+1; vecm and the naives
-# project everything. A DM test of ardl vs vecm therefore compares a conditional
-# forecast to an unconditional one, not two forecasting procedures. Either label
-# the ardl/nardl columns as scenario-conditional -- which is the bridge/OBR use
-# case and defensible if stated -- or add an unconditional ARDL column driven by
-# RW-projected covariates before running DM across the two groups.
+write.csv(struct_fc %>% mutate(date = as.character(as.Date(dts[origin + 1]))),
+          "data/outputs/forecasts/h1_vecm_rank_trace.csv", row.names = FALSE)

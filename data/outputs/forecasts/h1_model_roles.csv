@@ -1,0 +1,13 @@
+"model","role","benchmark"
+"rw","model_set",TRUE
+"snaive","model_set",FALSE
+"ar","model_set",FALSE
+"tslm","model_set",FALSE
+"tslm_s","model_set",FALSE
+"vecm","model_set",FALSE
+"ardl_rw","model_set",FALSE
+"nardl_rw","model_set",FALSE
+"ardl_dir","robust_swap",FALSE
+"nardl_dir","robust_swap",FALSE
+"ardl_cond","conditional",FALSE
+"nardl_cond","conditional",FALSE
