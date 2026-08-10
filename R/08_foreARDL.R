@@ -28,6 +28,7 @@ idx <- ts(rep(0, n_in + n_fc), start = START, frequency = 4)
 ta <- time(idx)
 dd <- function(yr) which.min(abs(ta - yr))
 
+# Impulse dummies
 for (nm in DUMMY_NAMES) hist[[nm]] <- 0
 hist$d08Q3[dd(2008.50)] <- 1
 hist$d20Q2[dd(2020.25)] <- 1
@@ -35,10 +36,11 @@ hist$d20Q3[dd(2020.50)] <- 1
 hist$d23Q2[dd(2023.25)] <- 1
 hist$d23Q3[dd(2023.50)] <- 1
 
+# Seasonal dummies over entire forecasting period
 S <- outer(as.numeric(cycle(idx)), 1:3, "==") - 1 / 4
 hist$sd1 <- S[, 1]; hist$sd2 <- S[, 2]; hist$sd3 <- S[, 3]
 
-# Partial sums over the full extended series
+# Partial sums over the full extended series (with OBR projections)
 for (v in NL_VARS) {
   d <- c(0, diff(hist[[v]]))
   hist[[paste0(v, "_pos")]] <- cumsum(pmax(d, 0))
@@ -74,7 +76,9 @@ recurse <- function(model, data, first_fc) {
     for (i in seq_along(b)) {
       tm <- terms[[i]]
       x <- if (tm$var == "(Intercept)") 1
+      # Read from forecast vector
       else if (tm$var == "lhstarts") y[t - tm$lag]
+      # Read from known covariate data
       else data[[tm$var]][t - tm$lag]
       val <- val + b[[i]] * x
     }
