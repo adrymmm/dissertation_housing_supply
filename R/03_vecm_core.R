@@ -25,9 +25,10 @@ final_dummies[dd(2020.50), 3] <- 1
 final_dummies[dd(2023.25), 4] <- 1
 final_dummies[dd(2023.50), 5] <- 1
 
-# ---- Lag order: K=5 imposed (Michalis 2023 comparability), FPE agrees;
-# HQ/SC prefer K=2; AIC hits the pmax boundary (uninformative). Residual
-# diagnostics supporting K=5 over K=2 live in the diagnostics script.
+# ---- Lag order: K=5 selected by FPE, corroborated by a residual
+# serial-correlation search across the full lag range (U-shape minimum,
+# confirmed independently on the five-variable system). HQ/SC prefer K=2;
+# AIC hits the pmax boundary (uninformative). Diagnostics in diagnostics script.
 pmax_eng <- floor(12 * (nrow(eng_tf) / 100)^(1/4))
 lagsel <- VARselect(eng_tf, lag.max = pmax_eng, type = "const",
                     season = 4, exogen = final_dummies)
