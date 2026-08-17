@@ -18,18 +18,36 @@ FIGURES_DIR = ROOT / "data" / "outputs" / "figures"
 # Column roles, matching the R script:
 #   *_rw    RW projections -- unconditional
 #   *_dir   h=1 reparameterisation -- unconditional
+#   *_rt    lag orders / K / rank re-selected at each origin -- real time
 #   *_cond  actual covariates at t+1 -- ex post, conditional
 BENCH = ["RW", "SNAIVE", "AR", "TSLM", "TSLM_s"]
-ML_TESTED = ["ARRF", "LSTM"]
-ML_ALL = ML_TESTED + ["Chronos"]          # Chronos out: no forward projection
+ML_TESTED = ["ARRF", "LSTM", "Chronos"]
+ML_ALL = ML_TESTED
+# Chronos was previously reported but untested, because the t5 forward path
+# was unusable (it collapsed onto a token-bin lattice). Chronos-Bolt produces a
+# clean forward path, so it is now a full member of the race.
+#
+# Blend membership is kept separate from test membership so the two decisions
+# are independent: Chronos joins the ensembles as well, since its h=1 forecast
+# is unconditional and real-time-feasible on the same information set as the
+# other members. Set to ["ARRF", "LSTM"] to test Chronos without blending it.
+ENSEMBLE_ML = ML_TESTED
 ENSEMBLE = ["Ensemble_avg", "Ensemble_invmse"]
 COND_EXPOST = ["ARDL_cond", "NARDL_cond"]
 
+# The *_rt columns re-select the ARDL/NARDL orders, the NARDL's decomposed
+# variable, and the VECM's K and rank using data up to each origin only. The
+# frozen variant keeps the full-sample choices and is reported for disclosure,
+# not tested: putting it in the model set would compare specifications that saw
+# the evaluation window against benchmarks that didn't.
 VARIANTS = {
-    "rw":  ("ARDL_rw", "NARDL_rw"),
-    "dir": ("ARDL_dir", "NARDL_dir"),
+    "rt":     ("VECM_rt", "ARDL_rt",     "NARDL_rt"),
+    "rt_dir": ("VECM_rt", "ARDL_dir_rt", "NARDL_dir_rt"),
+    "frozen": ("VECM",    "ARDL_rw",     "NARDL_rw"),
 }
-HEADLINE_VARIANT = "rw"
+TESTED_VARIANTS = ["rt", "rt_dir"]
+HEADLINE_VARIANT = "rt"
+FROZEN_DISCLOSURE = list(VARIANTS["frozen"]) + ["ARDL_dir", "NARDL_dir"]
 
 SPA_BENCHMARKS = ["RW"]
 WARMUP = 8
@@ -51,6 +69,11 @@ SOURCES = [
     ("NARDL_rw", "h1_forecasts.csv", "date", "nardl_rw", "actual", True),
     ("ARDL_dir", "h1_forecasts.csv", "date", "ardl_dir", "actual", True),
     ("NARDL_dir", "h1_forecasts.csv", "date", "nardl_dir", "actual", True),
+    ("VECM_rt", "h1_forecasts.csv", "date", "vecm_rt", "actual", True),
+    ("ARDL_rt", "h1_forecasts.csv", "date", "ardl_rt", "actual", True),
+    ("NARDL_rt", "h1_forecasts.csv", "date", "nardl_rt", "actual", True),
+    ("ARDL_dir_rt", "h1_forecasts.csv", "date", "ardl_dir_rt", "actual", True),
+    ("NARDL_dir_rt", "h1_forecasts.csv", "date", "nardl_dir_rt", "actual", True),
     ("ARDL_cond", "h1_forecasts.csv", "date", "ardl_cond", "actual", True),
     ("NARDL_cond", "h1_forecasts.csv", "date", "nardl_cond", "actual", True),
 ]
@@ -63,8 +86,12 @@ role_of = {name: roles.get(pcol)
 assert all(role_of.get(m) == "conditional" for m in COND_EXPOST), \
     f"expected conditional role for {COND_EXPOST}, got {role_of}"
 assert all(role_of.get(m) in ("model_set", "robust_swap")
-           for v in VARIANTS.values() for m in v), \
-    f"a tested ARDL/NARDL column is not unconditional: {role_of}"
+           for k in TESTED_VARIANTS for m in VARIANTS[k]), \
+    f"a tested structural column is not unconditional: {role_of}"
+# The frozen-spec columns must never end up in a tested panel: R marks them
+# `frozen_spec` precisely so this assertion can catch it if VARIANTS is edited.
+assert all(role_of.get(m) == "frozen_spec" for m in FROZEN_DISCLOSURE), \
+    f"frozen-spec columns are not tagged frozen_spec: {role_of}"
 
 # Load, merge and chronologize
 merged = None
@@ -114,15 +141,28 @@ def invmse_ensemble(preds, actual, warmup, weight_mask):
 full_mask = np.ones(len(merged), dtype=bool)
 excov_mask = ~merged["Quarter"].isin(EXCLUDE_QUARTERS).to_numpy()
 
-PLOT_NOTE = ("Ex post columns (ARDL_cond, NARDL_cond) omitted: conditioned on "
+PLOT_NOTE = ("Structural models use lag orders / K / rank re-selected at each origin. "
+             "Ex post columns (ARDL_cond, NARDL_cond) omitted: conditioned on "
              "realised covariates at t+1, not comparable on the same "
              "information set.")
 
 results = {}
 
-for vkey, (ardl_col, nardl_col) in VARIANTS.items():
-    struct = ["VECM", ardl_col, nardl_col]
-    blend = struct + ML_TESTED
+print("\nSpecification leakage: full-sample vs real-time selection (RMSE, full sample)")
+for frozen, rt in [("ARDL_rw", "ARDL_rt"), ("NARDL_rw", "NARDL_rt"),
+                   ("VECM", "VECM_rt"), ("ARDL_dir", "ARDL_dir_rt"),
+                   ("NARDL_dir", "NARDL_dir_rt")]:
+    r_f = np.sqrt(np.nanmean((actual - merged[frozen].to_numpy(float)) ** 2))
+    r_r = np.sqrt(np.nanmean((actual - merged[rt].to_numpy(float)) ** 2))
+    r_b = np.sqrt(np.nanmean((actual - merged["RW"].to_numpy(float)) ** 2))
+    print(f"  {frozen:10s} {r_f:.4f}  ->  {rt:13s} {r_r:.4f}"
+          f"   ({100 * (r_r - r_f) / r_f:+.1f}% RMSE, {100 * (r_r - r_b) / r_b:+.1f}% vs RW)")
+
+
+for vkey, struct in VARIANTS.items():
+    struct = list(struct)
+    tested = vkey in TESTED_VARIANTS
+    blend = struct + ENSEMBLE_ML
     blend_preds = merged[blend].to_numpy(dtype=float)
 
     mcs_models = BENCH + struct + ML_TESTED
@@ -130,7 +170,9 @@ for vkey, (ardl_col, nardl_col) in VARIANTS.items():
 
     panels = [
         ("Unconditional benchmarks", BENCH),
-        ("Unconditional structural", struct),
+        ("Structural (spec selected per origin)" if tested
+         else "Structural (full-sample spec -- MCS/SPA below inherit its "
+              "specification leakage, report for disclosure only)", struct),
         ("ML", ML_ALL),
         ("Ensembles", ENSEMBLE),
         ("Ex post (conditional, not tested)", COND_EXPOST),
