@@ -34,6 +34,25 @@ def parse_quarter(x):
 
 
 
+def seasonal_factors(series, since=None, freq=4):
+    """Log-additive quarterly seasonal factors, classical decomposition
+    (centred 2x4 moving average), normalised to sum to zero.
+
+    Needed because OBR publishes some paths seasonally adjusted (transactions
+    are flagged as such in EFO table 1.16) while the models are estimated on
+    the raw NSA master series. Adding these back puts a projected SA path onto
+    the basis the coefficients were fitted on. `since` restricts to a recent
+    window so a changed seasonal regime isn't averaged with the 1970s.
+    """
+    ln = np.log(series.dropna())
+    trend = ln.rolling(freq, center=True).mean().rolling(2, center=True).mean()
+    dev = (ln - trend).dropna()
+    if since is not None:
+        dev = dev[dev.index.year >= since]
+    s = dev.groupby(dev.index.quarter).mean()
+    return s - s.mean()
+
+
 def build_bridge_inputs(base="../.."):
     fy_map = lambda q: q.year - 1 if q.quarter == 1 else q.year
     bridge = joblib.load(f"{base}/data/processed/completions_bridge.pkl")
@@ -111,10 +130,32 @@ def _seasonal_term(ecm, quarter):
     return sum(ecm[f"sd{j}"] * ((quarter == j) - 0.25) for j in (1, 2, 3))
 
 
+_DUMMY_RE = re.compile(r"^d(\d{2})Q(\d)$")
 
-def compute_d_lhstarts(window, new_exog, theta_mult, ecm, lr, t0=None, quarter=None):
+
+def _dummy_period(name):
+    """'d08Q3' -> Period('2008Q3'); None if the name isn't an impulse dummy.
+    Two-digit years map to 1950-2049, which covers the sample."""
+    m = _DUMMY_RE.match(name)
+    if not m:
+        return None
+    yy, q = int(m.group(1)), int(m.group(2))
+    return pd.Period(year=2000 + yy if yy < 50 else 1900 + yy, quarter=q, freq="Q")
+
+
+def _impulse_term(ecm, period):
+    """Impulse dummies. Zero over any forecast horizon, so scenarios are
+    unaffected -- but non-zero on the event quarters, which is what makes a
+    backtest over 2008Q3 / 2020Q2-Q3 / 2023Q2-Q3 reproduce the R ECM."""
+    return sum(coef for name, coef in ecm.items()
+               if _dummy_period(name) == period)
+
+
+def compute_d_lhstarts(window, new_exog, theta_mult, ecm, lr, t0=None, period=None):
     theta_mult = theta_mult or {}
     t0 = t0 or {}
+    period = pd.Period(period, freq="Q")
+    quarter = period.quarter
     w = window  # w[0]=t-4 ... w[-1]=t-1
     max_lag = len(w) - 1
  
@@ -151,16 +192,20 @@ def compute_d_lhstarts(window, new_exog, theta_mult, ecm, lr, t0=None, quarter=N
             d_lhstarts_t += coef * diffs[var][lag]
  
     d_lhstarts_t += _seasonal_term(ecm, quarter)
- 
+    d_lhstarts_t += _impulse_term(ecm, period)
+
     d_lhstarts_t += ecm["ect"] * ect_lag1
     return d_lhstarts_t
  
 
 def run_scenario(theta_mult, init_df, obr_df, ecm, lr):
     theta_mult = theta_mult or {}
-    unused = [k for k in ecm.index if not k.startswith("d(")
-              and k not in {"(Intercept)", "ect", "sd1", "sd2", "sd3",
-                            "d08Q3", "d20Q2", "d20Q3", "d23Q2", "d23Q3"}]
+    # Impulse dummies are handled by _impulse_term, but only if their names
+    # parse -- anything else is a term nothing in here applies.
+    unused = [k for k in ecm.index
+              if not k.startswith("d(")
+              and k not in {"(Intercept)", "ect", "sd1", "sd2", "sd3"}
+              and _dummy_period(k) is None]
     assert not unused, f"unhandled ECM terms: {unused}"
  
     window = init_df.to_dict("records")
@@ -170,10 +215,9 @@ def run_scenario(theta_mult, init_df, obr_df, ecm, lr):
     for t in range(len(obr_df)):
         row = obr_df.iloc[t]
         new_exog = row[["lrprc", "lvol", "r3", "lrcc"]].to_dict()
-        quarter = pd.Period(row["period"], freq="Q").quarter
- 
+
         d_lhstarts = compute_d_lhstarts(window, new_exog, theta_mult, ecm, lr,
-                                        t0, quarter=quarter)
+                                        t0, period=row["period"])
         lhstarts_t = window[-1]["lhstarts"] + d_lhstarts
  
         window = window[1:] + [{**new_exog, "lhstarts": lhstarts_t}]
@@ -190,7 +234,7 @@ def backtest_one_step(master, target_period, ecm, lr):
     new_exog = actual_row[["lrprc", "lvol", "r3", "lrcc"]].to_dict()
 
     predicted_d = compute_d_lhstarts(window, new_exog, {}, ecm, lr,
-                                 quarter=pd.Period(target_period, freq="Q").quarter)
+                                     period=target_period)
     actual_d = actual_row["lhstarts"] - window[-1]["lhstarts"]
 
     print(f"Target: {target_period}")
