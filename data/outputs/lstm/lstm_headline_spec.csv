@@ -1,0 +1,2 @@
+headline_spec,label,predictors,rmse,r2,skill_vs_rw,n_seeds,differenced_target,differenced_predictors,lstm_units,unidentified_dummies
+Spec3_SeasonalDummy,Spec 3: + Seasonal dummies (Q1-Q3),"lrprc, lvol, r3, lstock, lrcc, d_Q1, d_Q2, d_Q3",0.2814,0.0122,0.0043,10,True,True,16,"d_covid, d_crisis_pulse, d_crisis_step"

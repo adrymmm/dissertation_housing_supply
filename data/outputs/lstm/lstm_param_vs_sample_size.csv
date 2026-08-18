@@ -1,5 +1,3 @@
 Spec,N_Params,N_Train_Sequences,Params_per_Sample
-Spec1_NoDummy,18241,132,138.19
-Spec2_CrisisDummy,19009,132,144.01
-Spec3_SeasonalDummy,19009,132,144.01
-Spec4_CrisisSeasonal,19777,132,149.83
+Spec1_NoDummy,1489,131,11.37
+Spec3_SeasonalDummy,1681,131,12.83

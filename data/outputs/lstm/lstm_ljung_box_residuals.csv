@@ -1,5 +1,3 @@
-Spec,LB_statistic,p_value
-Spec1_NoDummy,24.283,0.0001
-Spec2_CrisisDummy,25.345,0.0
-Spec3_SeasonalDummy,25.362,0.0
-Spec4_CrisisSeasonal,24.179,0.0001
+Spec,Mean_Residual,LB_statistic,p_value
+Spec1_NoDummy,0.0091,21.991,0.0002
+Spec3_SeasonalDummy,0.0128,21.683,0.0002
