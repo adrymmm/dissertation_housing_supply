@@ -58,7 +58,7 @@ SOURCES = [
     ("RW_py", "chronos_forecasts.csv", "Quarter", "rw", "actual", False),
     ("Chronos", "chronos_forecasts.csv", "Quarter", "chronos", "actual", False),
     ("ARRF", "rf_forecasts.csv", "Quarter", "rf", "actual", False),
-    ("LSTM", "lstm_spec4_forecast.csv", "date", "lstm", "actual", True),
+    ("LSTM", "lstm_headline_forecast.csv", "date", "lstm", "actual", True),
     ("RW", "h1_forecasts.csv", "date", "rw", "actual", True),
     ("SNAIVE", "h1_forecasts.csv", "date", "snaive", "actual", True),
     ("AR", "h1_forecasts.csv", "date", "ar", "actual", True),
