@@ -1,4 +1,6 @@
 library(ARDL)
+library(zoo)   # as.zooreg() below -- must be attached explicitly, not just
+               # available transitively via ARDL's namespace
 
 # IMPORTANT HOUSING STOCK IS DROPPED
 eng_tf <- readRDS("R/models/eng_tf.rds")

@@ -1,6 +1,8 @@
 library(ARDL)
 library(strucchange)
 library(lmtest)
+library(zoo)   # as.zooreg() below -- must be attached explicitly, not just
+               # available transitively via ARDL's namespace
 
 eng_tf <- readRDS("R/models/eng_tf.rds")
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
