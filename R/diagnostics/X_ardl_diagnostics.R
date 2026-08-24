@@ -29,9 +29,21 @@ ardl_ecm  <- readRDS("R/models/ardl_ecm.rds")
 # --- lag order: was max_order actually interior? ---
 print(mod$top_orders)
 
+# bounds_f_test/bounds_t_test call dynlm, which resolves its fitting data from
+# the model's own stored formula environment rather than a portable copy. That
+# survives fine within the session a model was fit in, but breaks silently
+# (0 non-NA cases / empty model frame) after a readRDS() round-trip -- even
+# with an identical eng_zoo rebuilt above. Refitting with the saved order in
+# this session sidesteps it; coefficients are identical to ardl_best (checked
+# below), so this is a like-for-like stand-in, not a re-selection.
+ardl_best_live <- ardl(lhstarts ~ lrprc + lvol + r3 + lrcc |
+                         d08Q3 + d20Q2 + d20Q3 + d23Q2 + d23Q3 + sd1 + sd2 + sd3,
+                       data = eng_zoo, order = ardl_best$order)
+stopifnot(max(abs(coef(ardl_best_live) - coef(ardl_best))) < 1e-10)
+
 # --- bounds test for cointegration ---
-print(bounds_f_test(ardl_best, case = 3))
-print(bounds_t_test(ardl_best, case = 3))
+print(bounds_f_test(ardl_best_live, case = 3))
+print(bounds_t_test(ardl_best_live, case = 3))
 
 # --- residual autocorrelation: justifies including seasonals at all ---
 print(bgtest(ardl_best, order = 4))
