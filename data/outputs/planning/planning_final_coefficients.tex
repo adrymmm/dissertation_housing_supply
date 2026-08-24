@@ -1,0 +1,28 @@
+\begin{table}[htbp]
+\centering
+\caption{Granted planning permissions and private housing starts, England}
+\label{tab:planning_starts}
+\begin{tabular}{lrr}
+\toprule
+& Coefficient & HAC s.e. \\
+\midrule
+Constant & 5070.524*** & (1536.964) \\
+Granted$_{t-0}$ & 2.147*** & (0.514) \\
+Granted$_{t-1}$ & 0.588 & (0.866) \\
+Granted$_{t-2}$ & -2.512*** & (0.570) \\
+Granted$_{t-3}$ & 0.396 & (0.707) \\
+Granted$_{t-4}$ & -0.391 & (0.286) \\
+Starts$_{t-1}$ & 0.464*** & (0.157) \\
+Starts$_{t-2}$ & 0.125* & (0.069) \\
+Starts$_{t-3}$ & 0.004 & (0.065) \\
+Starts$_{t-4}$ & 0.166 & (0.117) \\
+Seasonal Q1 & 7382.713*** & (1162.268) \\
+Seasonal Q2 & 7792.515*** & (1304.888) \\
+Seasonal Q3 & 3189.912*** & (1010.769) \\
+2008Q3 (GFC) & -11193.826*** & (1576.802) \\
+2020Q2 (Covid) & -13989.623*** & (1265.035) \\
+2020Q3 (Covid) & 11087.121*** & (2026.666) \\
+\bottomrule
+\end{tabular}
+\begin{minipage}{\linewidth}\vspace{4pt}\footnotesize Dependent variable: England private-enterprise housing starts, 1982Q2--2025Q4 ($n=175$). Newey--West HAC standard errors, 4 lags. Seasonal dummies are centred. Adjusted $R^2 = 0.759$; Ljung--Box $p = 0.372$ (lag 4), $0.412$ (lag 8). Cumulative permissions effect $\sum\alpha_k = 0.229$ (s.e.\ 0.217), joint $F = 10.28$, $p < 0.001$; implied long-run multiplier $0.950$ (s.e.\ 0.635). $^{*}p<0.1$, $^{**}p<0.05$, $^{***}p<0.01$.\end{minipage}
+\end{table}
