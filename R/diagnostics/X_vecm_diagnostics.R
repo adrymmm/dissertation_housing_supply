@@ -23,6 +23,64 @@ serial_scan <- function(data, r, dummies, k_max, lags.pt = 16) {
 serial_scan(eng_tf,   r = 1, dummies = final_dummies, k_max = pmax_eng)
 normality.test(var_eng)
 
+# ---- Beta restriction tests (blrtest), r=1 headline, 6-var system --------
+# rank caveat: r<=1 trace stat 70.34 vs 70.60 (5% crit, see jo_eng summary) -
+# borderline, so both LR tests below are conditional on a near-coin-flip
+# rank choice, not just on the r=1 point estimate.
+v6   <- colnames(eng_tf)
+idx6 <- setNames(seq_along(v6), v6)
+p6   <- length(v6)
+
+vecm_r1 <- cajorls(jo_eng, r = 1)
+beta_r1 <- vecm_r1$beta[, 1]
+elas_r1 <- -beta_r1 / beta_r1["lhstarts.l1"]; names(elas_r1) <- v6
+
+# H0: elasticity_lrprc = ratio, all other vars free
+H_lrprc <- function(ratio) {
+  H <- matrix(0, p6, p6 - 1)
+  H[idx6["lhstarts"], 1] <- 1
+  H[idx6["lrprc"],   1] <- -ratio
+  free <- setdiff(v6, c("lhstarts", "lrprc"))
+  for (i in seq_along(free)) H[idx6[free[i]], i + 1] <- 1
+  H
+}
+lr_lrprc <- function(ratio) blrtest(z = jo_eng, H = H_lrprc(ratio), r = 1)@teststat
+
+t1 <- blrtest(z = jo_eng, H = H_lrprc(0.987), r = 1)
+
+# LR-based 95% CI in place of a Wald SE - individual beta_i don't have a
+# standard SE in the Johansen framework; inverting the LR test is the
+# defensible convention for a point-null like the Anastasiou (2023) 0.987.
+crit <- qchisq(0.95, 1)
+grid_lo <- unname(elas_r1["lrprc"])
+while (lr_lrprc(grid_lo) < crit && grid_lo > -2) grid_lo <- grid_lo - 0.05
+grid_hi <- unname(elas_r1["lrprc"])
+while (lr_lrprc(grid_hi) < crit && grid_hi < 3) grid_hi <- grid_hi + 0.05
+bisect <- function(lo, hi, f, target, tol = 1e-4) {
+  flo <- f(lo) - target
+  repeat {
+    mid <- (lo + hi) / 2; fm <- f(mid) - target
+    if (abs(hi - lo) < tol) return(mid)
+    if (sign(fm) == sign(flo)) { lo <- mid; flo <- fm } else hi <- mid
+  }
+}
+ci_lo <- bisect(grid_lo, unname(elas_r1["lrprc"]), lr_lrprc, crit)
+ci_hi <- bisect(unname(elas_r1["lrprc"]), grid_hi, lr_lrprc, crit)
+
+cat(sprintf("\nTEST 1  H0: lrprc=0.987 (Anastasiou 2023)  est=%.4f  95%%CI=[%.4f,%.4f]  LR=%.4f  df=1  p=%.4f  [rank r<=1: 70.34 vs 70.60 @5%%]\n",
+            elas_r1["lrprc"], ci_lo, ci_hi, t1@teststat, t1@pval[1]))
+
+# H0: elasticity_lrprc = -elasticity_lrcc (price/cost symmetry)
+H_sym <- matrix(0, p6, p6 - 1)
+H_sym[idx6["lrprc"], 1] <-  1
+H_sym[idx6["lrcc"],  1] <- -1
+free2 <- setdiff(v6, c("lrprc", "lrcc"))
+for (i in seq_along(free2)) H_sym[idx6[free2[i]], i + 1] <- 1
+t2 <- blrtest(z = jo_eng, H = H_sym, r = 1)
+
+cat(sprintf("TEST 2  H0: lrprc=-lrcc  lrprc=%.4f  lrcc=%.4f  LR=%.4f  df=1  p=%.4f  [rank r<=1: 70.34 vs 70.60 @5%%]\n",
+            elas_r1["lrprc"], elas_r1["lrcc"], t2@teststat, t2@pval[1]))
+
 # ---- 5-variable system excluding lstock ----------------------
 eng_tf_5 <- eng_tf[, c("lhstarts", "lrprc", "lvol", "r3", "lrcc")]
 jo_5 <- ca.jo(eng_tf_5, type = "trace", ecdet = "none", K = K,
@@ -41,7 +99,10 @@ normality.test(var_5)
 # Result so far: chi2=8.7, df=3, p=0.03 -> REJECTS. Second vector is NOT
 # just the stationarity direction.
 H_stat <- matrix(c(1, 0, 0, 0, 0), c(5, 1))
-summary(bh5lrtest(z = jo_5, H = H_stat, r = 2))
+t3 <- bh5lrtest(z = jo_5, H = H_stat, r = 2)
+summary(t3)
+cat(sprintf("TEST 3  H0: vec1=e_lhstarts (5-var, r=2)  LR=%.4f  df=3  p=%.4f  [V/W free column is NaN/Inf - degenerate, LR/df/p unaffected]\n",
+            t3@teststat, t3@pval[1]))
 
 # Independent sanity check, not relying on bh5lrtest's own eigenvector output
 round(jo_5@V[, 1:2], 3)
