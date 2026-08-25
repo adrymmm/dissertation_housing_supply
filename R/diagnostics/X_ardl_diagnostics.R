@@ -42,8 +42,8 @@ ardl_best_live <- ardl(lhstarts ~ lrprc + lvol + r3 + lrcc |
 stopifnot(max(abs(coef(ardl_best_live) - coef(ardl_best))) < 1e-10)
 
 # --- bounds test for cointegration ---
-print(bounds_f_test(ardl_best_live, case = 3))
-print(bounds_t_test(ardl_best_live, case = 3))
+print(bounds_f_test(ardl_best_live, case = 3, alpha = 0.05))
+print(bounds_t_test(ardl_best_live, case = 3, alpha = 0.05))
 
 # --- residual autocorrelation: justifies including seasonals at all ---
 print(bgtest(ardl_best, order = 4))
@@ -90,7 +90,7 @@ mod_full <- auto_ardl(lhstarts ~ lrprc + lvol + r3 + lrcc + lstock |
                       data = eng_zoo, max_order = 6)
 ardl_full <- mod_full$best_model
 cat("With-lstock order:", paste(ardl_full$order, collapse = ","), "\n")
-print(bounds_f_test(ardl_full, case = 3))
-print(bounds_t_test(ardl_full, case = 3))
+print(bounds_f_test(ardl_full, case = 3, alpha = 0.05))
+print(bounds_t_test(ardl_full, case = 3, alpha = 0.05))
 print(multipliers(ardl_full))
 saveRDS(ardl_full, "R/diagnostics/ardl_full_robustness.rds")
