@@ -15,31 +15,16 @@ from python.functions.forecast import quarter_str_from_dates, plot_rmse_bar, rep
 FORECASTS_DIR = ROOT / "data" / "outputs" / "forecasts"
 FIGURES_DIR = ROOT / "data" / "outputs" / "figures"
 
-# Column roles, matching the R script:
-#   *_rw    RW projections -- unconditional
-#   *_dir   h=1 reparameterisation -- unconditional
-#   *_rt    lag orders / K / rank re-selected at each origin -- real time
-#   *_cond  actual covariates at t+1 -- ex post, conditional
+# Column roles (matching R): *_rw=RW projections (unconditional), *_dir=h=1 reparameterisation (unconditional), *_rt=lag orders/K/rank re-selected per origin (real time), *_cond=actual covariates at t+1 (ex post, conditional)
 BENCH = ["RW", "SNAIVE", "AR", "TSLM", "TSLM_s"]
 ML_TESTED = ["ARRF", "LSTM", "Chronos"]
 ML_ALL = ML_TESTED
-# Chronos was previously reported but untested, because the t5 forward path
-# was unusable (it collapsed onto a token-bin lattice). Chronos-Bolt produces a
-# clean forward path, so it is now a full member of the race.
-#
-# Blend membership is kept separate from test membership so the two decisions
-# are independent: Chronos joins the ensembles as well, since its h=1 forecast
-# is unconditional and real-time-feasible on the same information set as the
-# other members. Set to ["ARRF", "LSTM"] to test Chronos without blending it.
+# Chronos-Bolt gives a clean forward path (unlike t5, which collapsed onto a token-bin lattice), so it's now tested and blended; set ENSEMBLE_ML = ["ARRF", "LSTM"] to test Chronos without blending it.
 ENSEMBLE_ML = ML_TESTED
 ENSEMBLE = ["Ensemble_avg", "Ensemble_invmse"]
 COND_EXPOST = ["ARDL_cond", "NARDL_cond"]
 
-# The *_rt columns re-select the ARDL/NARDL orders, the NARDL's decomposed
-# variable, and the VECM's K and rank using data up to each origin only. The
-# frozen variant keeps the full-sample choices and is reported for disclosure,
-# not tested: putting it in the model set would compare specifications that saw
-# the evaluation window against benchmarks that didn't.
+# *_rt re-selects ARDL/NARDL orders, the NARDL decomposed variable, and VECM K/rank using data up to each origin only; frozen keeps the full-sample choices and is disclosure-only, since its spec saw the evaluation window.
 VARIANTS = {
     "rt":     ("VECM_rt", "ARDL_rt",     "NARDL_rt"),
     "rt_dir": ("VECM_rt", "ARDL_dir_rt", "NARDL_dir_rt"),
@@ -88,8 +73,7 @@ assert all(role_of.get(m) == "conditional" for m in COND_EXPOST), \
 assert all(role_of.get(m) in ("model_set", "robust_swap")
            for k in TESTED_VARIANTS for m in VARIANTS[k]), \
     f"a tested structural column is not unconditional: {role_of}"
-# The frozen-spec columns must never end up in a tested panel: R marks them
-# `frozen_spec` precisely so this assertion can catch it if VARIANTS is edited.
+# Frozen-spec columns must never enter a tested panel; R tags them frozen_spec so this assertion catches any VARIANTS edit that would leak one in.
 assert all(role_of.get(m) == "frozen_spec" for m in FROZEN_DISCLOSURE), \
     f"frozen-spec columns are not tagged frozen_spec: {role_of}"
 
@@ -123,10 +107,7 @@ for u, c in [("ARDL_rw", "ARDL_cond"), ("NARDL_rw", "NARDL_cond")]:
 
 
 def invmse_ensemble(preds, actual, warmup, weight_mask):
-    """Expanding-window inverse-MSE weights. nanmean, so a model with a NaN
-    in its history is skipped at that t rather than poisoning every later
-    weight. weight_mask restricts the weighting history to the evaluation
-    subsample, so the ex-COVID panel isn't weighted on COVID quarters."""
+    """Expanding-window inverse-MSE weights; nanmean skips a NaN in a model's history instead of poisoning later weights, and weight_mask restricts weighting history to the evaluation subsample so ex-COVID isn't weighted on COVID quarters."""
     out = np.nanmean(preds, axis=1)
     for t in range(warmup, len(preds)):
         hist = weight_mask[:t]
