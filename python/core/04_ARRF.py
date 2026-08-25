@@ -1,5 +1,7 @@
+from pathlib import Path
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import TimeSeriesSplit, GridSearchCV
 from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -70,10 +72,12 @@ print("Frozen hyperparameters:", best_params)
 # evaluated across the whole test window without re-fitting). Both are valid
 # choices; the asymmetry is disclosed in the methods section rather than hidden.
 preds = np.empty(len(test_idx))
+importances = np.empty((len(test_idx), len(features)))
 for i, t in enumerate(test_idx):
     rf = RandomForestRegressor(random_state=42, **best_params)
     rf.fit(X.iloc[:t], y.iloc[:t])          # all data strictly before target t
     preds[i] = rf.predict(X.iloc[[t]])[0]   # features at t are realised (lag1/lag4 known)
+    importances[i, :] = rf.feature_importances_
 
 actual = y.iloc[test_idx].values
 
@@ -92,3 +96,30 @@ out = pd.DataFrame({
 out.to_csv('data/outputs/forecasts/rf_forecasts.csv', index=False)
 print("\nSaved rf_forecasts.csv")
 print(out.to_string(index=False))
+
+# --- feature importance: mean decrease-in-impurity (MDI) importance, averaged across
+# the 64 expanding-window refits -- there is no single "final" model in a recursive
+# scheme (a fresh RF is fit at every origin), so the mean across origins is the
+# faithful summary of what actually produced the OOS forecasts above. SD shows how
+# stable the ranking is across the evaluation window.
+imp_df = pd.DataFrame({
+    'feature': features,
+    'mean_importance': importances.mean(axis=0),
+    'std_importance': importances.std(axis=0),
+}).sort_values('mean_importance', ascending=False)
+print(f"\nFeature importance (mean MDI, averaged across {len(test_idx)} "
+      "expanding-window refits):")
+print(imp_df.to_string(index=False))
+imp_df.to_csv('data/outputs/forecasts/arrf_feature_importance.csv', index=False)
+
+FIGURES_DIR = Path('data/outputs/figures')
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+imp_plot = imp_df.sort_values('mean_importance')
+fig, ax = plt.subplots(figsize=(8, 5))
+ax.barh(imp_plot['feature'], imp_plot['mean_importance'],
+        xerr=imp_plot['std_importance'], color='#9E9E9E', ecolor='#555555', capsize=3)
+ax.set_xlabel('Mean decrease in impurity (± SD across expanding-window refits)')
+ax.set_title('ARRF: Feature Importance')
+fig.tight_layout()
+fig.savefig(FIGURES_DIR / 'arrf_feature_importance.png', dpi=200)
+print("Saved arrf_feature_importance.png")
