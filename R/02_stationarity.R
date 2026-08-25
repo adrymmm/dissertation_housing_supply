@@ -38,7 +38,7 @@ for (v in colnames(eng_tf)) {
 }
 
 # -- TWO-BREAK LM TEST --
-source("../vendor/LeeStrazicichUnitRoot/LeeStrazicichUnitRootTestParallelization.R")  # defines ur.ls.bootstrap
+source("R/vendor/LeeStrazicichUnitRoot/LeeStrazicichUnitRootTestParallelization.R")  # defines ur.ls.bootstrap
 
 library(foreach); library(doSNOW); library(parallel)
 cl <- makeCluster(max(1, detectCores() - 1))   # all cores but one
