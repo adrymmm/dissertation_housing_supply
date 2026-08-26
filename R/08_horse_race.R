@@ -12,6 +12,8 @@ eng_zoo    <- readRDS("R/models/nardl_eng_zoo.rds")
 jo_eng     <- readRDS("R/models/jo_eng.rds")
 ardl_best  <- readRDS("R/models/ardl_best.rds")
 nardl_fits <- readRDS("R/models/nardl_fits_full.rds")
+if (!file.exists("R/models/mrf_h1.rds")) stop("run R/07_MacroRF.R first")
+mrf_h1 <- readRDS("R/models/mrf_h1.rds")
 
 dat <- as.data.frame(eng_zoo)
 dts <- as.yearqtr(as.numeric(zoo::index(eng_zoo)))
@@ -229,61 +231,35 @@ uncond_fc <- eng_tsbl %>%
   dplyr::select(origin, model = .model, fc = .mean) %>%
   pivot_wider(names_from = model, values_from = fc)
 
-# ---- ARDL-family and VECM ----------------------------------------------
+# ---- ARDL-family and VECM (frozen, full-sample spec) --------------------
 struct_fc <- do.call(rbind, lapply(origin_set, function(o) {
   fz <- vecm_fit1(o, K, R_RANK)
   row <- data.frame(
-    origin     = o,
-    # frozen specs: orders / K / rank chosen once on 1975-2025
-    ardl_rw    = fc1_rw(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), yv, o),
-    nardl_rw   = fc1_rw(dat, y_name, nardl_x, ord_nardl, c(dum, seas), yv, o),
-    ardl_dir   = fit_fc1(X_ardl_dir,   yv, o)$fc,
-    nardl_dir  = fit_fc1(X_nardl_dir,  yv, o)$fc,
-    vecm       = fz$fc,
-    # conditional: sees realised covariates at o+1. Reported, not tested.
-    ardl_cond  = fit_fc1(X_ardl_cond,  yv, o)$fc,
-    nardl_cond = fit_fc1(X_nardl_cond, yv, o)$fc,
-    trace_r1   = fz$trace_r1, cv5_r1 = fz$cv5_r1, n_dum = fz$n_dum
+    origin   = o,
+    ardl_rw  = fc1_rw(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), yv, o),
+    nardl_rw = fc1_rw(dat, y_name, nardl_x, ord_nardl, c(dum, seas), yv, o),
+    vecm     = fz$fc,
+    trace_r1 = fz$trace_r1, cv5_r1 = fz$cv5_r1, n_dum = fz$n_dum
   )
-
-  if (RT_SELECT) {
-    oa <- select_ardl(o, contemp = TRUE)
-    od <- select_ardl(o, contemp = FALSE)
-    na <- select_nardl(o, contemp = TRUE)
-    nd <- select_nardl(o, contemp = FALSE)
-    rt <- vecm_fit1(o, select_K(o), NULL)
-    row <- cbind(row, data.frame(
-      ardl_rt      = fc1_rt(base_x,  oa,       o, contemp = TRUE,  rw = TRUE),
-      nardl_rt     = fc1_rt(na$xs,   na$order, o, contemp = TRUE,  rw = TRUE),
-      ardl_dir_rt  = fc1_rt(base_x,  od,       o, contemp = FALSE, rw = FALSE),
-      nardl_dir_rt = fc1_rt(nd$xs,   nd$order, o, contemp = FALSE, rw = FALSE),
-      vecm_rt      = rt$fc,
-      rt_ardl_order  = paste(oa, collapse = ","),
-      rt_nardl_var   = sub("_pos$", "", na$xs[1]),
-      rt_nardl_order = paste(na$order, collapse = ","),
-      rt_vecm_K      = rt$K,
-      rt_vecm_r      = rt$r
-    ))
-  }
   cat(sprintf("  origin %d (%s) done\n", o, as.character(dts[o + 1])))
   row
 }))
 
 # ---- assemble ----------------------------------------------------------
-BENCH       <- c("rw", "snaive", "ar", "tslm", "tslm_s")
-FROZEN_SET  <- c("vecm", "ardl_rw", "nardl_rw", "ardl_dir", "nardl_dir")
-# Headline panel: specifications selected on the origin's information set, so
-# the structural models face the same real-time constraint as `ar`, which has
-# always re-selected its own p at every origin.
-MODEL_SET   <- c(BENCH, if (RT_SELECT) c("vecm_rt", "ardl_rt", "nardl_rt")
-                        else c("vecm", "ardl_rw", "nardl_rw"))
-ROBUST_SWAP <- c(BENCH, if (RT_SELECT) c("vecm_rt", "ardl_dir_rt", "nardl_dir_rt")
-                        else c("vecm", "ardl_dir", "nardl_dir"))
-FROZEN_ONLY <- if (RT_SELECT) setdiff(FROZEN_SET, MODEL_SET) else character(0)
-COND_ONLY   <- c("ardl_cond", "nardl_cond")
-mcols       <- unique(c(MODEL_SET, ROBUST_SWAP, FROZEN_ONLY, COND_ONLY))
+BENCH  <- c("rw", "snaive", "ar", "tslm", "tslm_s")
+# Frozen: lag orders / K / rank chosen once on the full 1975-2025 sample,
+# including the evaluation window -- disclosure-only, not a real-time
+# out-of-sample test.
+STRUCT <- c("vecm", "ardl_rw", "nardl_rw")
+# MRF: spec fixed a priori (no selection on the evaluation window) and refit at
+# every origin, so unlike STRUCT these are genuine real-time forecasts.
+MRF_COLS <- c("arrf", "gtvp")
+mcols  <- c(BENCH, STRUCT, MRF_COLS)
+
+stopifnot(setequal(mrf_h1$origin, origin_set))
 
 res <- full_join(uncond_fc, struct_fc, by = "origin") %>%
+  full_join(mrf_h1, by = "origin") %>%
   mutate(target = origin + 1,
          actual = yv[target],
          date = as.character(as.Date(dts[target])),
@@ -303,34 +279,12 @@ cat("\nRMSE (ex dummy targets):\n")
 print(round(sqrt(colMeans((res[!res$dummy_target, mcols] -
                              res$actual[!res$dummy_target])^2)), 4))
 
-# ---- how much of the structural models' edge was specification leakage ----
-if (RT_SELECT) {
-  rmse <- function(m) sqrt(mean((res[[m]] - res$actual)^2))
-  cmp <- data.frame(
-    frozen   = c("ardl_rw", "nardl_rw", "vecm", "ardl_dir",    "nardl_dir"),
-    realtime = c("ardl_rt", "nardl_rt", "vecm_rt", "ardl_dir_rt", "nardl_dir_rt"),
-    stringsAsFactors = FALSE
-  )
-  cmp$rmse_frozen <- vapply(cmp$frozen,   rmse, 0)
-  cmp$rmse_rt     <- vapply(cmp$realtime, rmse, 0)
-  cmp$pct_worse   <- 100 * (cmp$rmse_rt / cmp$rmse_frozen - 1)
-  cmp$vs_rw_pct   <- 100 * (cmp$rmse_rt / rmse("rw") - 1)
-  cat("\nSpecification leakage (full-sample order/K/rank vs re-selected per origin):\n")
-  print(cmp, row.names = FALSE, digits = 4)
-
-  cat("\nARDL orders selected in real time:\n");   print(table(struct_fc$rt_ardl_order))
-  cat("\nNARDL decomposed variable:\n");           print(table(struct_fc$rt_nardl_var))
-  cat("\nVECM K x rank:\n"); print(table(K = struct_fc$rt_vecm_K, r = struct_fc$rt_vecm_r))
-}
-
 dir.create("data/outputs/forecasts", recursive = TRUE, showWarnings = FALSE)
 write.csv(res, "data/outputs/forecasts/h1_forecasts.csv", row.names = FALSE)
 write.csv(
   data.frame(
     model = mcols,
-    role  = ifelse(mcols %in% COND_ONLY, "conditional",
-            ifelse(mcols %in% FROZEN_ONLY, "frozen_spec",
-            ifelse(mcols %in% MODEL_SET, "model_set", "robust_swap"))),
+    role  = ifelse(mcols %in% STRUCT, "frozen_spec", "model_set"),
     benchmark = mcols %in% "rw"
   ),
   "data/outputs/forecasts/h1_model_roles.csv", row.names = FALSE
