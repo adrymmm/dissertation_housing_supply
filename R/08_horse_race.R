@@ -25,15 +25,12 @@ nardl_var <- "lrcc"
 dum       <- c("d08Q3", "d20Q2", "d20Q3", "d23Q2", "d23Q3")
 seas      <- c("sd1", "sd2", "sd3")
 
-# Real-time specification selection.
-#
 # ardl_best$order, the NARDL order, the choice of which variable to decompose,
-# and the VECM's K and rank were all picked on the full 1975-2025 sample
-RT_SELECT       <- TRUE
-MAX_ORDER_ARDL  <- 6L   
-MAX_LAG_NARDL   <- 8L   
-GTS_THRESH      <- 0.10  
-base_x          <- c("lrprc", "lvol", "r3", "lrcc")
+# and the VECM's K and rank were all picked on the full 1975-2025 sample --
+# i.e. this is the frozen spec, and it saw the evaluation window. Results
+# below are disclosure-only, not a real-time out-of-sample test. See
+# R/08b_horse_race_rt_check.R for a real-time re-selected sensitivity check
+# quantifying how much of the frozen spec's edge is specification leakage.
 
 stopifnot(all(c(y_name, dum, seas) %in% names(dat)))
 yv <- dat[[y_name]]
@@ -81,8 +78,10 @@ cat("NARDL: ", paste(nardl_x, collapse = " + "), " | ",
 # ---- ARDL-family one-step forecasts ------------------------------------
 lagv <- function(x, k) if (k == 0L) x else c(rep(NA_real_, k), head(x, -k))
 
-# contemp = TRUE  -> Conditional / ex post.
-# contemp = FALSE -> Direct (h = 1) predictive reparameterisation.
+# contemp = TRUE  -> Conditional / ex post (used only for the internal design
+# check below -- the conditional forecast itself is not reported).
+# contemp = FALSE -> Direct (h = 1) predictive reparameterisation (not used
+# in this script; retained in design() as a generic switch).
 design <- function(dat, y, xs, ord, fixed, contemp = TRUE) {
   stopifnot(length(ord) == 1L + length(xs))
   cl <- list()
@@ -122,120 +121,11 @@ fc1_rw <- function(dat, y, xs, ord, fixed, yv, o) {
           yv, o)$fc
 }
 
-# ---- real-time specification selection -----------------------------------
-# All of this reads rows 1..o only. Candidate designs are column subsets of one
-# pre-built lag bank, so a full AIC grid costs a few seconds per origin.
-
-nardl_pool <- unique(c(base_x, paste0(rep(base_x, each = 2), c("_pos", "_neg"))))
-bank_vars  <- unique(c(y_name, nardl_pool))
-MAX_K      <- max(MAX_ORDER_ARDL, MAX_LAG_NARDL)
-
-BANK <- local({
-  cl <- list()
-  for (v in bank_vars) for (k in 0:MAX_K)
-    cl[[sprintf("L(%s, %d)", v, k)]] <- lagv(dat[[v]], k)
-  cbind(`(Intercept)` = 1,
-        as.matrix(as.data.frame(cl, check.names = FALSE)),
-        as.matrix(dat[, c(dum, seas)]))
-})
-FIX_COLS  <- match(c(dum, seas), colnames(BANK))
-EST_START <- MAX_K + 1L          # common sample, so AICs are comparable
-
-cols_for <- function(y, xs, ord, contemp) {
-  k0 <- if (contemp) 0L else 1L
-  c(sprintf("L(%s, %d)", y, seq_len(ord[1])),
-    unlist(lapply(seq_along(xs), function(j)
-      if (ord[j + 1L] >= k0)
-        sprintf("L(%s, %d)", xs[j], k0:ord[j + 1L]) else character(0))))
-}
-
-# Columns of BANK with variation in the window -- drops impulse dummies for
-# events that haven't happened yet at this origin.
-usable_fix <- function(o) {
-  FIX_COLS[apply(BANK[EST_START:o, FIX_COLS, drop = FALSE], 2,
-                 function(z) length(unique(z)) > 1L)]
-}
-
-rt_window <- function(idx, o) {
-  X <- BANK[EST_START:o, idx, drop = FALSE]
-  y <- yv[EST_START:o]
-  ok <- !is.na(y)
-  list(X = X[ok, , drop = FALSE], y = y[ok])
-}
-
-# AIC only -- the hot path, run once per grid point.
-rt_aic <- function(idx, o) {
-  w <- rt_window(idx, o)
-  f <- .lm.fit(w$X, w$y)
-  if (f$rank < ncol(w$X)) return(Inf)              # rank deficient: reject
-  n <- length(w$y)
-  n * log(sum(f$residuals^2) / n) + 2 * f$rank
-}
-
-# AIC plus coefficient p-values, for the general-to-specific search.
-rt_fit <- function(idx, o) {
-  w <- rt_window(idx, o)
-  qf <- qr(w$X)
-  n <- length(w$y); p <- qf$rank
-  if (p < ncol(w$X)) return(NULL)
-  b <- qr.coef(qf, w$y)
-  rss <- sum((w$y - drop(w$X %*% b))^2)
-  se <- sqrt(diag(chol2inv(qr.R(qf))) * rss / (n - p))
-  list(aic = n * log(rss / n) + 2 * p,
-       pval = setNames(2 * stats::pt(-abs(b / se), n - p), colnames(w$X)))
-}
-
-# ARDL: AIC over the full order grid, the rule auto_ardl() applies by default.
-ardl_grid <- as.matrix(expand.grid(c(list(seq_len(MAX_ORDER_ARDL)),
-                                     rep(list(0:MAX_ORDER_ARDL), length(base_x)))))
-select_ardl <- function(o, contemp) {
-  fx <- usable_fix(o)
-  best <- NULL; best_aic <- Inf
-  for (r in seq_len(nrow(ardl_grid))) {
-    ord <- ardl_grid[r, ]
-    idx <- c(1L, match(cols_for(y_name, base_x, ord, contemp), colnames(BANK)), fx)
-    a <- rt_aic(idx, o)
-    if (a < best_aic) { best_aic <- a; best <- ord }
-  }
-  as.integer(best)
-}
-
-# NARDL: general-to-specific on the tail lags, the rule gts() applies, run for
-# each candidate decomposition; the decomposed variable is then the one with
-# the lowest AIC (the full-sample choice of lrcc was a judgement call, and a
-# real-time analogue has to be mechanical).
-gts_rt <- function(v, o, contemp) {
-  xs  <- c(paste0(v, c("_pos", "_neg")), setdiff(base_x, v))
-  fx  <- usable_fix(o)
-  ord <- rep(MAX_LAG_NARDL, 1L + length(xs))
-  repeat {
-    idx <- c(1L, match(cols_for(y_name, xs, ord, contemp), colnames(BANK)), fx)
-    f <- rt_fit(idx, o)
-    # rank-deficient at this order: shrink the longest lag and retry
-    if (is.null(f)) { ord[which.max(ord)] <- max(ord) - 1L; next }
-    tails <- ifelse(c(ord[1] > 1L, ord[-1] > 0L),
-                    sprintf("L(%s, %d)", c(y_name, xs), ord), NA_character_)
-    keep <- !is.na(tails) & tails %in% names(f$pval)
-    if (!any(keep)) return(list(order = ord, aic = f$aic, xs = xs))
-    p <- f$pval[tails[keep]]
-    if (max(p) <= GTS_THRESH) return(list(order = ord, aic = f$aic, xs = xs))
-    ord[which(keep)[which.max(p)]] <- ord[which(keep)[which.max(p)]] - 1L
-  }
-}
-select_nardl <- function(o, contemp) {
-  cand <- lapply(base_x, gts_rt, o = o, contemp = contemp)
-  cand[[which.min(vapply(cand, `[[`, 0, "aic"))]]
-}
-
-# One-step forecast from a spec chosen at this origin. `rw` substitutes
-# x_{o+1} = x_o so the forecast stays on the origin's information set.
-fc1_rt <- function(xs, ord, o, contemp, rw) {
-  d <- if (rw) project_rw(dat, xs, o) else dat
-  fit_fc1(design(d, y_name, xs, ord, c(dum, seas), contemp = contemp), yv, o)$fc
-}
-
-# VECM: K by FPE and rank by the trace test, both re-run at each origin
-# (03_vecm_core.R fixed K = 5 and r = 1 on the full sample).
+# VECM: K and rank are fixed to the full-sample choices (03_vecm_core.R:
+# K = 5, r = 1). johansen_rank() is retained because vecm_fit1() below falls
+# back to it when r_use is NULL -- that branch is only exercised by the
+# real-time re-selection in R/08b_horse_race_rt_check.R, which calls
+# vecm_fit1(o, select_K(o), NULL); this script always passes R_RANK explicitly.
 # Sequential trace test: walk r = 0, 1, 2, ... and stop at the first
 # non-rejection. urca labels rows "r = 0  |" / "r <= k |" and lists them in
 # descending k, so the r each row refers to is parsed rather than assumed.
@@ -249,21 +139,12 @@ johansen_rank <- function(jo, kmax) {
   kmax
 }
 
-X_ardl_cond  <- design(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), contemp = TRUE)
-X_nardl_cond <- design(dat, y_name, nardl_x, ord_nardl, c(dum, seas), contemp = TRUE)
-X_ardl_dir   <- design(dat, y_name, ardl_x,  ord_ardl,  c(dum, seas), contemp = FALSE)
-X_nardl_dir  <- design(dat, y_name, nardl_x, ord_nardl, c(dum, seas), contemp = FALSE)
-
-local({
-  drop_msg <- function(xs, ord, label) {
-    gone <- xs[ord[-1] < 1L]
-    if (length(gone))
-      cat(sprintf("NOTE  %s direct spec drops (order 0 only): %s\n",
-                  label, paste(gone, collapse = ", ")))
-  }
-  drop_msg(ardl_x,  ord_ardl,  "ARDL ")
-  drop_msg(nardl_x, ord_nardl, "NARDL")
-})
+# X_ardl_cond is not a reported forecast (no ardl_cond output column) -- it is
+# kept purely as an internal correctness check: it's the only design() call
+# that can be validated directly against ardl_best's own coefficients (the rw
+# design can't be, since it substitutes lagged values instead of matching
+# ardl_best directly).
+X_ardl_cond <- design(dat, y_name, ardl_x, ord_ardl, c(dum, seas), contemp = TRUE)
 
 # Validation: manual conditional design must reproduce ardl_best coefs
 local({
@@ -284,19 +165,21 @@ local({
   xp <- intersect(ardl_x, nardl_x)[1]
   stopifnot(!is.na(xp))
   d2 <- dat; d2[[xp]][o + 1L] <- d2[[xp]][o + 1L] + 1
-  
+
   probe <- function(dd) c(
+    # contemp-style probe kept ONLY to validate the perturbation itself is
+    # non-vacuous -- it is not a reported conditional forecast. Without it, a
+    # bug that made the perturbation a no-op would pass the no-leakage
+    # assertions below trivially.
     cond_a = fit_fc1(design(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), TRUE),  yv, o)$fc,
-    dir_a  = fit_fc1(design(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), FALSE), yv, o)$fc,
-    dir_n  = fit_fc1(design(dd, y_name, nardl_x, ord_nardl, c(dum, seas), FALSE), yv, o)$fc,
     rw_a   = fc1_rw(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), yv, o),
     rw_n   = fc1_rw(dd, y_name, nardl_x, ord_nardl, c(dum, seas), yv, o)
   )
   d <- probe(d2) - probe(dat)
-  cat(sprintf("leak probe on %s at target: cond %+.4f | dir %.2e/%.2e | rw %.2e/%.2e\n",
-              xp, d[["cond_a"]], d[["dir_a"]], d[["dir_n"]], d[["rw_a"]], d[["rw_n"]]))
-  stopifnot(abs(d[["cond_a"]]) > 1e-6)                     # test not vacuous
-  stopifnot(all(abs(d[c("dir_a", "dir_n", "rw_a", "rw_n")]) < 1e-10))
+  cat(sprintf("leak probe on %s at target: cond %+.4f (validity check, not reported) | rw %.2e/%.2e\n",
+              xp, d[["cond_a"]], d[["rw_a"]], d[["rw_n"]]))
+  stopifnot(abs(d[["cond_a"]]) > 1e-6)                     # perturbation not vacuous
+  stopifnot(all(abs(d[c("rw_a", "rw_n")]) < 1e-10))        # rw designs see no leakage
 })
 
 # ---- VECM one-step forecast --------------------------------------------
@@ -326,22 +209,6 @@ vecm_fit1 <- function(o, K_use, r_use = NULL) {
        r = r_use, K = K_use, n_dum = length(keep),
        trace_r1 = if (length(i1) == 1) jo@teststat[i1] else NA_real_,
        cv5_r1   = if (length(i1) == 1) jo@cval[i1, "5pct"] else NA_real_)
-}
-
-# K by FPE on rows 1..o
-select_K <- function(o) {
-  keep <- colnames(Dv)[colSums(abs(Dv[1:o, , drop = FALSE])) > 0]
-  lag_max <- floor(12 * (o / 100)^(1 / 4))
-  sel <- try(VARselect(Xv[1:o, , drop = FALSE], lag.max = lag_max, type = "const",
-                       season = 4, exogen = Dv[1:o, keep, drop = FALSE]),
-             silent = TRUE)
-  if (inherits(sel, "try-error")) return(K)
-  k_fpe <- as.integer(sel$selection[["FPE(n)"]])
-  if (k_fpe < lag_max) return(k_fpe)
-  k_hq <- as.integer(sel$selection[["HQ(n)"]])
-  cat(sprintf("    NOTE origin %d: FPE at lag.max (%d), falling back to HQ (%d)\n",
-              o, lag_max, k_hq))
-  k_hq
 }
 
 # ---- unconditional benchmarks ------------------------------------------
