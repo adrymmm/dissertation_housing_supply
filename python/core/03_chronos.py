@@ -7,7 +7,7 @@ comparison is exactly structural-model-with-covariates vs pure pattern
 matcher.  Forecasts are produced in log units to match the rest of the race.
 
 This script does NOT score the model.  It emits chronos_forecasts.csv and
-06_aggr_forecast.py does the ranking and the testing (MCS / SPA over the whole
+05_aggr_forecast.py does the ranking and the testing (MCS / SPA over the whole
 model set).  The RMSE/MAE printed below are a run-time sanity check only --
 the authoritative numbers come from the aggregator, which applies the COVID
 exclusion mask and the ensemble warmup.  Pairwise Diebold-Mariano was dropped
@@ -59,8 +59,8 @@ df = df[df['Quarter'] != pd.Period('2026Q1', freq='Q')].reset_index(drop=True)
 y = np.log(df[TARGET].to_numpy(dtype=float))
 
 # Evaluation window -- match the R horse race (2010Q1-2025Q4) so the merge in
-# 06_aggr_forecast.py is an inner join over a full set of quarters.  Located by
-# Period lookup rather than row arithmetic, as in 04_ARRF.py.
+# 05_aggr_forecast.py is an inner join over a full set of quarters.  Located by
+# Period lookup rather than row arithmetic.
 start, end = pd.Period('2010Q1', freq='Q'), pd.Period('2025Q4', freq='Q')
 test_idx = np.where((df['Quarter'] >= start) & (df['Quarter'] <= end))[0]
 N_TEST   = len(test_idx)
@@ -68,7 +68,7 @@ assert N_TEST > 0, "no rows in the 2010Q1-2025Q4 evaluation window"
 assert test_idx[0] >= 40, "not enough training data before 2010Q1"
 assert df['Quarter'].iloc[-1] == end, (
     f"last row is {df['Quarter'].iloc[-1]}, expected {end} -- the test window "
-    "won't match 04_ARRF.py / 05_LSTM.py, which both cap at 2025Q4"
+    "won't match 04_LSTM.py, which caps at 2025Q4"
 )
 
 # --- chronos: expanding window ---
@@ -108,7 +108,7 @@ def rmse_mae(a, p):
 print(f"model: {MODEL} on {device}")
 print(f"holdout: {df['Quarter'].iloc[test_idx[0]]}-{end} "
       f"({N_TEST} quarters), h={H}, point={POINT}\n")
-# Sanity check only -- 06_aggr_forecast.py produces the reported figures.
+# Sanity check only -- 05_aggr_forecast.py produces the reported figures.
 for name, p in [("naive RW", rw_pred), ("Chronos", chronos_pred)]:
     r, m = rmse_mae(actual, p)
     print(f"{name:10s}  RMSE={r:.4f}  MAE={m:.4f}")
@@ -127,14 +127,14 @@ out = pd.DataFrame({
     "chronos": chronos_pred,
     "chronos_median": chronos_median,
     "chronos_mean": chronos_mean,
-    "rw": rw_pred,          # load-bearing: 06_aggr_forecast.py asserts this
+    "rw": rw_pred,          # load-bearing: 05_aggr_forecast.py asserts this
     "actual": actual,       # matches R's RW column, aligning the two pipelines
 })
 FORECASTS_DIR.mkdir(parents=True, exist_ok=True)
 out.to_csv(FORECASTS_DIR / "chronos_forecasts.csv", index=False)
 print(f"\nSaved chronos_forecasts.csv -> {FORECASTS_DIR}")
 
-# --- forward path, consumed by 09_net_additions.ipynb -------------------------
+# --- forward path, consumed by 08_net_additions.ipynb -------------------------
 # Levels come from exponentiating the log quantiles: quantiles are equivariant
 # under a monotone transform, so exp(q_a) is the level a-quantile.  The point
 # path stays the median regardless of POINT -- exp() of a log mean would be a

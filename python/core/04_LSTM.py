@@ -184,7 +184,7 @@ print(df_full.isna().sum().to_string())
 # =============================================================================
 # BLOCK 7: TRAIN / TEST SPLIT (anchored to match the R horse race, not 80/20)
 # =============================================================================
-TEST_START = pd.Timestamp("2010-01-01")  # matches eval0 in 07_horse_race.R
+TEST_START = pd.Timestamp("2010-01-01")  # matches eval0 in 08_horse_race.R
 
 n_obs = len(df_full)
 lookback = 8
