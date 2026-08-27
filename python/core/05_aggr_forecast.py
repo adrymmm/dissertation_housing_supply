@@ -15,34 +15,28 @@ from python.functions.forecast import quarter_str_from_dates, plot_rmse_bar, rep
 FORECASTS_DIR = ROOT / "data" / "outputs" / "forecasts"
 FIGURES_DIR = ROOT / "data" / "outputs" / "figures"
 
-# Column roles (matching R): *_rw=RW projections (unconditional), *_dir=h=1 reparameterisation (unconditional), *_rt=lag orders/K/rank re-selected per origin (real time), *_cond=actual covariates at t+1 (ex post, conditional)
+# Column roles (matching R): *_rw = frozen, full-sample-selected structural spec
+# (unconditional); VECM carries no suffix but is the same frozen spec.
 BENCH = ["RW", "SNAIVE", "AR", "TSLM", "TSLM_s"]
-ML_TESTED = ["ARRF", "LSTM", "Chronos"]
+# ARRF/GTVP are the two MRF specs from R/07_MacroRF.R.
+ML_TESTED = ["ARRF", "GTVP", "LSTM", "Chronos"]
 ML_ALL = ML_TESTED
 # Chronos-Bolt gives a clean forward path (unlike t5, which collapsed onto a token-bin lattice), so it's now tested and blended; set ENSEMBLE_ML = ["ARRF", "LSTM"] to test Chronos without blending it.
 ENSEMBLE_ML = ML_TESTED
 ENSEMBLE = ["Ensemble_avg", "Ensemble_invmse"]
-COND_EXPOST = ["ARDL_cond", "NARDL_cond"]
 
-# *_rt re-selects ARDL/NARDL orders, the NARDL decomposed variable, and VECM K/rank using data up to each origin only; frozen keeps the full-sample choices and is disclosure-only, since its spec saw the evaluation window.
-VARIANTS = {
-    "rt":     ("VECM_rt", "ARDL_rt",     "NARDL_rt"),
-    "rt_dir": ("VECM_rt", "ARDL_dir_rt", "NARDL_dir_rt"),
-    "frozen": ("VECM",    "ARDL_rw",     "NARDL_rw"),
-}
-TESTED_VARIANTS = ["rt", "rt_dir"]
-HEADLINE_VARIANT = "rt"
-FROZEN_DISCLOSURE = list(VARIANTS["frozen"]) + ["ARDL_dir", "NARDL_dir"]
+# Frozen keeps the full-sample-selected choices (lag orders / K / rank); its spec saw
+# the evaluation window, so results are disclosure-only, not a real-time out-of-sample test.
+struct = ["VECM", "ARDL_rw", "NARDL_rw"]
+FROZEN_DISCLOSURE = ["VECM", "ARDL_rw", "NARDL_rw"]
 
 SPA_BENCHMARKS = ["RW"]
 WARMUP = 8
-EXCLUDE_QUARTERS = ["2020Q2", "2020Q3"]
 
 # (display_name, filename, quarter_col, pred_col, actual_col, date_to_quarter)
 SOURCES = [
     ("RW_py", "chronos_forecasts.csv", "Quarter", "rw", "actual", False),
     ("Chronos", "chronos_forecasts.csv", "Quarter", "chronos", "actual", False),
-    ("ARRF", "rf_forecasts.csv", "Quarter", "rf", "actual", False),
     ("LSTM", "lstm_headline_forecast.csv", "date", "lstm", "actual", True),
     ("RW", "h1_forecasts.csv", "date", "rw", "actual", True),
     ("SNAIVE", "h1_forecasts.csv", "date", "snaive", "actual", True),
@@ -52,15 +46,8 @@ SOURCES = [
     ("VECM", "h1_forecasts.csv", "date", "vecm", "actual", True),
     ("ARDL_rw", "h1_forecasts.csv", "date", "ardl_rw", "actual", True),
     ("NARDL_rw", "h1_forecasts.csv", "date", "nardl_rw", "actual", True),
-    ("ARDL_dir", "h1_forecasts.csv", "date", "ardl_dir", "actual", True),
-    ("NARDL_dir", "h1_forecasts.csv", "date", "nardl_dir", "actual", True),
-    ("VECM_rt", "h1_forecasts.csv", "date", "vecm_rt", "actual", True),
-    ("ARDL_rt", "h1_forecasts.csv", "date", "ardl_rt", "actual", True),
-    ("NARDL_rt", "h1_forecasts.csv", "date", "nardl_rt", "actual", True),
-    ("ARDL_dir_rt", "h1_forecasts.csv", "date", "ardl_dir_rt", "actual", True),
-    ("NARDL_dir_rt", "h1_forecasts.csv", "date", "nardl_dir_rt", "actual", True),
-    ("ARDL_cond", "h1_forecasts.csv", "date", "ardl_cond", "actual", True),
-    ("NARDL_cond", "h1_forecasts.csv", "date", "nardl_cond", "actual", True),
+    ("ARRF", "h1_forecasts.csv", "date", "arrf", "actual", True),
+    ("GTVP", "h1_forecasts.csv", "date", "gtvp", "actual", True),
 ]
 
 
@@ -68,12 +55,8 @@ roles = pd.read_csv(FORECASTS_DIR / "h1_model_roles.csv").set_index("model")["ro
 role_of = {name: roles.get(pcol)
            for (name, fname, _, pcol, _, _) in SOURCES
            if fname == "h1_forecasts.csv"}
-assert all(role_of.get(m) == "conditional" for m in COND_EXPOST), \
-    f"expected conditional role for {COND_EXPOST}, got {role_of}"
-assert all(role_of.get(m) in ("model_set", "robust_swap")
-           for k in TESTED_VARIANTS for m in VARIANTS[k]), \
-    f"a tested structural column is not unconditional: {role_of}"
-# Frozen-spec columns must never enter a tested panel; R tags them frozen_spec so this assertion catches any VARIANTS edit that would leak one in.
+# Frozen-spec columns must be tagged frozen_spec in R; this assertion catches any
+# VARIANTS edit that would silently swap in an unconditional-selection column instead.
 assert all(role_of.get(m) == "frozen_spec" for m in FROZEN_DISCLOSURE), \
     f"frozen-spec columns are not tagged frozen_spec: {role_of}"
 
@@ -98,13 +81,6 @@ for c in actual_cols[1:]:
 # Check if RW in python aligns with RW in R
 assert np.allclose(merged["RW_py"], merged["RW"], atol=1e-6), "Python and R RW series misaligned!"
 
-# RMSE gap between conditional and RW projected
-for u, c in [("ARDL_rw", "ARDL_cond"), ("NARDL_rw", "NARDL_cond")]:
-    r_u = np.sqrt(np.nanmean((actual - merged[u].to_numpy(float)) ** 2))
-    r_c = np.sqrt(np.nanmean((actual - merged[c].to_numpy(float)) ** 2))
-    print(f"lookahead value  {u:10s} {r_u:.4f}  vs  {c:11s} {r_c:.4f}"
-          f"   ({100 * (r_u - r_c) / r_u:+.1f}% RMSE)")
-
 
 def invmse_ensemble(preds, actual, warmup, weight_mask):
     """Expanding-window inverse-MSE weights; nanmean skips a NaN in a model's history instead of poisoning later weights, and weight_mask restricts weighting history to the evaluation subsample so ex-COVID isn't weighted on COVID quarters."""
@@ -120,70 +96,46 @@ def invmse_ensemble(preds, actual, warmup, weight_mask):
 
 
 full_mask = np.ones(len(merged), dtype=bool)
-excov_mask = ~merged["Quarter"].isin(EXCLUDE_QUARTERS).to_numpy()
 
-PLOT_NOTE = ("Structural models use lag orders / K / rank re-selected at each origin. "
-             "Ex post columns (ARDL_cond, NARDL_cond) omitted: conditioned on "
-             "realised covariates at t+1, not comparable on the same "
-             "information set.")
+PLOT_NOTE = ("Structural models use the frozen, full-sample-selected lag orders / K / "
+             "rank; results are disclosure-only, not a real-time out-of-sample test.")
 
 results = {}
 
-print("\nSpecification leakage: full-sample vs real-time selection (RMSE, full sample)")
-for frozen, rt in [("ARDL_rw", "ARDL_rt"), ("NARDL_rw", "NARDL_rt"),
-                   ("VECM", "VECM_rt"), ("ARDL_dir", "ARDL_dir_rt"),
-                   ("NARDL_dir", "NARDL_dir_rt")]:
-    r_f = np.sqrt(np.nanmean((actual - merged[frozen].to_numpy(float)) ** 2))
-    r_r = np.sqrt(np.nanmean((actual - merged[rt].to_numpy(float)) ** 2))
-    r_b = np.sqrt(np.nanmean((actual - merged["RW"].to_numpy(float)) ** 2))
-    print(f"  {frozen:10s} {r_f:.4f}  ->  {rt:13s} {r_r:.4f}"
-          f"   ({100 * (r_r - r_f) / r_f:+.1f}% RMSE, {100 * (r_r - r_b) / r_b:+.1f}% vs RW)")
+blend = struct + ENSEMBLE_ML
+blend_preds = merged[blend].to_numpy(dtype=float)
 
+mcs_models = BENCH + struct + ML_TESTED
+spa_models = mcs_models + ENSEMBLE
+print("mcs_models:", mcs_models)
+print("spa_models:", spa_models)
 
-for vkey, struct in VARIANTS.items():
-    struct = list(struct)
-    tested = vkey in TESTED_VARIANTS
-    blend = struct + ENSEMBLE_ML
-    blend_preds = merged[blend].to_numpy(dtype=float)
+panels = [
+    ("Unconditional benchmarks", BENCH),
+    ("Structural (frozen full-sample spec)", struct),
+    ("ML", ML_ALL),
+    ("Ensembles", ENSEMBLE),
+]
 
-    mcs_models = BENCH + struct + ML_TESTED
-    spa_models = mcs_models + ENSEMBLE
+m = merged.copy()
+m["Ensemble_avg"] = np.nanmean(blend_preds, axis=1)
+m["Ensemble_invmse"] = invmse_ensemble(blend_preds, actual, WARMUP, full_mask)
 
-    panels = [
-        ("Unconditional benchmarks", BENCH),
-        ("Structural (spec selected per origin)" if tested
-         else "Structural (full-sample spec -- MCS/SPA below inherit its "
-              "specification leakage, report for disclosure only)", struct),
-        ("ML", ML_ALL),
-        ("Ensembles", ENSEMBLE),
-        ("Ex post (conditional, not tested)", COND_EXPOST),
-    ]
+res = report(actual, m, full_mask, "Full sample",
+             panels=panels, mcs_models=mcs_models,
+             spa_benchmarks=SPA_BENCHMARKS, spa_models=spa_models)
+results["Full sample"] = res
 
-    for label, mask, fig_title in [
-        ("Full sample", full_mask, "Forecast RMSE - Full Sample"),
-        ("Excluding COVID (2020Q2-Q3)", excov_mask, "Forecast RMSE - Excluding COVID"),
-    ]:
-        m = merged.copy()
-        m["Ensemble_avg"] = np.nanmean(blend_preds, axis=1)
-        m["Ensemble_invmse"] = invmse_ensemble(blend_preds, actual, WARMUP, mask)
+lb = run_ljungbox(res["errs"], mcs_models + ENSEMBLE)
+print("\n  [Ljung-Box, Full sample]")
+print(lb.to_string(index=False))
+plot_rmse_bar(res["errs"], FIGURES_DIR, title="Forecast RMSE - Full Sample", note=PLOT_NOTE)
 
-        res = report(actual, m, mask, f"{label} [variant={vkey}]",
-                     panels=panels, mcs_models=mcs_models,
-                     spa_benchmarks=SPA_BENCHMARKS, spa_models=spa_models)
-        results[(vkey, label)] = res
-
-        if vkey == HEADLINE_VARIANT:    
-            lb = run_ljungbox(res["errs"], mcs_models + ENSEMBLE)
-            print(f"\n  [Ljung-Box, {label}]")
-            print(lb.to_string(index=False))
-            plot_rmse_bar(res["errs"], FIGURES_DIR, title=fig_title,
-                          exclude=COND_EXPOST, note=PLOT_NOTE)
-
-            # Testing block 4
-            for loss in ("sq", "abs"):
-                spa4 = run_spa(res["errs"], "RW", spa_models, loss=loss, block_size=4)
-                mcs4 = run_mcs(res["errs"], mcs_models, loss=loss, block_size=4)
-                name = "MSE" if loss == "sq" else "MAE"
-                print(f"\n  [block_size=4, {name}] p(consistent)={spa4['pvalues']['consistent']:.3f}"
-                    f"  better than RW: {', '.join(spa4['better']) or 'none'}")
-                print(mcs4.to_string(index=False))
+# Testing block 4
+for loss in ("sq", "abs"):
+    spa4 = run_spa(res["errs"], "RW", spa_models, loss=loss, block_size=4)
+    mcs4 = run_mcs(res["errs"], mcs_models, loss=loss, block_size=4)
+    name = "MSE" if loss == "sq" else "MAE"
+    print(f"\n  [block_size=4, {name}] p(consistent)={spa4['pvalues']['consistent']:.3f}"
+        f"  better than RW: {', '.join(spa4['better']) or 'none'}")
+    print(mcs4.to_string(index=False))
