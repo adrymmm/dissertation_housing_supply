@@ -653,23 +653,35 @@ def run_cv_spec(spec_name, predictor_vars, seeds=CV_SEEDS):
     print(f"  TIME SERIES CROSS-VALIDATION (ROLLING ORIGIN) - {spec_name}")
     print(f"=========================================================")
 
-    # Scale on the first 60% of observations (a fixed reference window, so the
-    # folds stay comparable) and never on anything a fold has not yet seen.
-    cv_scale_base = int(np.floor(0.6 * n_obs))
-    X, y, orig_rows, scale_params, _ = prepare_arrays(
-        predictor_vars, n_train, scale_rows=cv_scale_base)
+    # Probe call: fold geometry only. The scaling window is re-fit inside each
+    # fold (below), so the arrays are rebuilt per fold rather than once here.
+    _, y_probe, probe_rows, _, _ = prepare_arrays(predictor_vars, n_train)
 
-    n_seq_total = len(y)
+    # sequence j targets original row j + lookback + offset, so offset is
+    # recovered from the probe rather than re-deriving prepare_arrays' internals.
+    diff_offset = int(probe_rows[0]) - lookback
+
+    n_seq_total = len(y_probe)
     initial_train = int(np.floor(0.5 * n_seq_total))
     fold_size = int(np.floor((n_seq_total - initial_train) / n_folds))
 
     cv_results = []
+    pooled_true, pooled_pred, pooled_rw = [], [], []
     for fold in range(1, n_folds + 1):
         train_end = initial_train + (fold - 1) * fold_size
         test_start = train_end
         test_end = n_seq_total if fold == n_folds else train_end + fold_size
         if test_start >= test_end:
             continue
+
+        # Scale on THIS fold's training rows only. The last training target sits
+        # at modelling-frame row train_end-1+lookback, i.e. original row
+        # train_end-1+lookback+diff_offset, so the window ends one past it.
+        # The previous fixed 0.6*n_obs cutoff (row 122) reached past the end of
+        # the fold-1 and fold-2 training windows, which was look-ahead.
+        scale_rows = train_end + lookback + diff_offset
+        X, y, orig_rows, scale_params, _ = prepare_arrays(
+            predictor_vars, n_train, scale_rows=scale_rows)
 
         X_tr, y_tr = X[:train_end], y[:train_end]
         X_te = X[test_start:test_end]
@@ -685,7 +697,11 @@ def run_cv_spec(spec_name, predictor_vars, seeds=CV_SEEDS):
         pred_lvl = np.mean(fold_preds, axis=0)
 
         m = score(y_te_lvl, pred_lvl)
-        rw = score(y_te_lvl, LEVEL[rows_te - 1])
+        rw_pred = LEVEL[rows_te - 1]
+        rw = score(y_te_lvl, rw_pred)
+        pooled_true.append(y_te_lvl)
+        pooled_pred.append(pred_lvl)
+        pooled_rw.append(rw_pred)
         print(f"Fold {fold} | Train n={train_end}, Test n={len(y_te_lvl)} | "
               f"RMSE={m['rmse']:.4f} MAE={m['mae']:.4f} MAPE={m['mape']:.2f}% "
               f"R2={m['r2']:+.4f} | RW RMSE={rw['rmse']:.4f}")
@@ -695,18 +711,63 @@ def run_cv_spec(spec_name, predictor_vars, seeds=CV_SEEDS):
             'MAPE': round(m['mape'], 2), 'R2': round(m['r2'], 4),
             'RW_RMSE': round(rw['rmse'], 4),
             'Skill_vs_RW': round(1 - m['rmse'] / rw['rmse'], 4),
+            # Denominator behind this fold's R2: R2 = 1 - (RMSE / SD_in_fold)^2.
+            # Recorded so the fold table shows how much of the R2 spread is just
+            # how far the level happened to drift inside the window.
+            'SD_in_fold': round(float(np.std(y_te_lvl)), 4),
         })
 
     cv_df = pd.DataFrame(cv_results)
+
+    # --- Pooled metrics (primary) -------------------------------------------
+    # Every CV test point is concatenated into one sample and scored once, so
+    # the R2 denominator is a single SST about the grand mean instead of five
+    # window-specific ones. Averaging per-fold R2 averages five ratios whose
+    # denominators differ by ~4x across folds, which makes the headline number
+    # track the local variance of the level rather than forecast quality.
+    yt = np.concatenate(pooled_true)
+    yp = np.concatenate(pooled_pred)
+    yr = np.concatenate(pooled_rw)
+    sse = float(np.sum((yt - yp) ** 2))
+    sst = float(np.sum((yt - yt.mean()) ** 2))
+    pooled_rmse = float(np.sqrt(sse / len(yt)))
+    pooled_rw_rmse = float(np.sqrt(np.mean((yt - yr) ** 2)))
+    pooled = {
+        'Skill_vs_RW': float(1 - pooled_rmse / pooled_rw_rmse),
+        'RMSE': pooled_rmse,
+        'MAE': float(np.mean(np.abs(yt - yp))),
+        'MAPE': float(mape(yt, yp)),
+        'R2': float(1 - sse / sst),
+    }
+
+    # --- Fold dispersion, weighted by fold size ------------------------------
+    # Folds are unequal (19/19/19/19/22), so a plain mean over-weights the
+    # short ones. Weights are Test_N throughout.
+    w = cv_df['Test_N'].values.astype(float)
+
+    def wmean(col):
+        return float(np.average(cv_df[col].values.astype(float), weights=w))
+
+    def wsd(col):
+        v = cv_df[col].values.astype(float)
+        return float(np.sqrt(np.average((v - np.average(v, weights=w)) ** 2, weights=w)))
+
+    metrics = ['Skill_vs_RW', 'RMSE', 'MAE', 'MAPE', 'R2']
     cv_summary = pd.DataFrame({
-        'Spec': [spec_name] * 5,
-        'Metric': ['RMSE', 'MAE', 'MAPE', 'R2', 'Skill_vs_RW'],
-        'Mean': [cv_df[c].mean() for c in ['RMSE', 'MAE', 'MAPE', 'R2', 'Skill_vs_RW']],
-        'SD': [cv_df[c].std() for c in ['RMSE', 'MAE', 'MAPE', 'R2', 'Skill_vs_RW']],
+        'Spec': [spec_name] * len(metrics),
+        'Metric': metrics,
+        'Pooled': [pooled[c] for c in metrics],
+        'FoldWMean': [wmean(c) for c in metrics],
+        'FoldWSD': [wsd(c) for c in metrics],
     }).round(4)
 
-    print(f"\n--- Cross-Validation Mean +/- SD Across Folds ({spec_name}) ---")
+    print(f"\n--- Cross-Validation Summary ({spec_name}) ---")
+    print(f"    Pooled over {len(yt)} CV test points; fold stats weighted by Test_N.")
+    print(f"    Primary metric: Skill_vs_RW. Pooled RW RMSE = {pooled_rw_rmse:.4f}.")
     print(cv_summary.to_string(index=False))
+    print("    NOTE: R2 is reported for completeness only. On a near-random-walk")
+    print("    log level it mostly reflects the variance of the scoring window,")
+    print("    not forecast skill -- see SD_in_fold in the fold table.")
     return {'folds': cv_df, 'summary': cv_summary}
 
 
@@ -716,11 +777,12 @@ cv_folds_all = pd.concat([v['folds'] for v in cv_out.values()], ignore_index=Tru
 cv_summary_all = pd.concat([v['summary'] for v in cv_out.values()], ignore_index=True)
 
 print("\n\n=========================================================")
-print("  CROSS-VALIDATION SUMMARY: ALL SPECS (Mean +/- SD)")
+print("  CROSS-VALIDATION SUMMARY: ALL SPECS (pooled; fold stats Test_N-weighted)")
 print("=========================================================")
 print(cv_summary_all.to_string(index=False))
 
-cv_summary_wide = cv_summary_all.pivot(index='Spec', columns='Metric', values=['Mean', 'SD'])
+cv_summary_wide = cv_summary_all.pivot(index='Spec', columns='Metric',
+                                       values=['Pooled', 'FoldWMean', 'FoldWSD'])
 cv_summary_wide.columns = [f"{a}_{b}" for a, b in cv_summary_wide.columns]
 cv_summary_wide = cv_summary_wide.reset_index()
 print("\n--- Cross-Validation Comparison Table (Wide Format) ---")
