@@ -6,7 +6,8 @@ sys.path.append(str(ROOT))
 
 import numpy as np
 import pandas as pd
-from python.functions.forecast import quarter_str_from_dates, plot_rmse_bar, report, run_ljungbox, run_mcs, run_spa
+from python.functions.forecast import (quarter_str_from_dates, plot_rmse_bar, report,
+                                       run_ljungbox, run_mcs, run_spa, summary_table)
 
 
 # IMPORTANT: RUN 08_horse_race.R first for h1_forecasts.csv + h1_model_roles.csv
@@ -95,7 +96,13 @@ def invmse_ensemble(preds, actual, warmup, weight_mask):
     return out
 
 
+# COVID quarters are excluded in the second subsample: 2020Q2-Q3 are extreme
+# outliers driven by site shutdowns, and a squared-error horse race is dominated
+# by them. Restored from the pre-8476da2 aggregator, same quarters as before.
+EXCLUDE_QUARTERS = ["2020Q2", "2020Q3"]
+
 full_mask = np.ones(len(merged), dtype=bool)
+excov_mask = ~merged["Quarter"].isin(EXCLUDE_QUARTERS).to_numpy()
 
 PLOT_NOTE = ("Structural models use the frozen, full-sample-selected lag orders / K / "
              "rank; results are disclosure-only, not a real-time out-of-sample test.")
@@ -117,25 +124,43 @@ panels = [
     ("Ensembles", ENSEMBLE),
 ]
 
-m = merged.copy()
-m["Ensemble_avg"] = np.nanmean(blend_preds, axis=1)
-m["Ensemble_invmse"] = invmse_ensemble(blend_preds, actual, WARMUP, full_mask)
+summaries = []
 
-res = report(actual, m, full_mask, "Full sample",
-             panels=panels, mcs_models=mcs_models,
-             spa_benchmarks=SPA_BENCHMARKS, spa_models=spa_models)
-results["Full sample"] = res
+for label, mask, fig_title in [
+    ("Full sample", full_mask, "Forecast RMSE - Full Sample"),
+    ("Excluding COVID (2020Q2-Q3)", excov_mask, "Forecast RMSE - Excluding COVID"),
+]:
+    m = merged.copy()
+    m["Ensemble_avg"] = np.nanmean(blend_preds, axis=1)
+    # Weight history is restricted to the evaluation subsample, so the ex-COVID
+    # inverse-MSE weights are not formed on the COVID quarters they exclude.
+    m["Ensemble_invmse"] = invmse_ensemble(blend_preds, actual, WARMUP, mask)
 
-lb = run_ljungbox(res["errs"], mcs_models + ENSEMBLE)
-print("\n  [Ljung-Box, Full sample]")
-print(lb.to_string(index=False))
-plot_rmse_bar(res["errs"], FIGURES_DIR, title="Forecast RMSE - Full Sample", note=PLOT_NOTE)
+    res = report(actual, m, mask, label,
+                 panels=panels, mcs_models=mcs_models,
+                 spa_benchmarks=SPA_BENCHMARKS, spa_models=spa_models)
+    results[label] = res
 
-# Testing block 4
-for loss in ("sq", "abs"):
-    spa4 = run_spa(res["errs"], "RW", spa_models, loss=loss, block_size=4)
-    mcs4 = run_mcs(res["errs"], mcs_models, loss=loss, block_size=4)
-    name = "MSE" if loss == "sq" else "MAE"
-    print(f"\n  [block_size=4, {name}] p(consistent)={spa4['pvalues']['consistent']:.3f}"
-        f"  better than RW: {', '.join(spa4['better']) or 'none'}")
-    print(mcs4.to_string(index=False))
+    lb = run_ljungbox(res["errs"], mcs_models + ENSEMBLE)
+    print(f"\n  [Ljung-Box, {label}]")
+    print(lb.to_string(index=False))
+    plot_rmse_bar(res["errs"], FIGURES_DIR, title=fig_title, note=PLOT_NOTE)
+
+    # Testing block 4
+    for loss in ("sq", "abs"):
+        spa4 = run_spa(res["errs"], "RW", spa_models, loss=loss, block_size=4)
+        mcs4 = run_mcs(res["errs"], mcs_models, loss=loss, block_size=4)
+        name = "MSE" if loss == "sq" else "MAE"
+        print(f"\n  [block_size=4, {name}] p(consistent)={spa4['pvalues']['consistent']:.3f}"
+            f"  better than RW: {', '.join(spa4['better']) or 'none'}")
+        print(mcs4.to_string(index=False))
+
+    tab = summary_table(res, mcs_models + ENSEMBLE, label=label)
+    summaries.append(tab)
+    print(f"\n  [Summary table: RMSE / MAE / ME / MCS p -- {label}]")
+    print(tab.drop(columns="Subsample").to_string(index=False,
+                                                  float_format=lambda v: f"{v:.4f}"))
+
+summary_all = pd.concat(summaries, ignore_index=True)
+summary_all.to_csv(FORECASTS_DIR / "horse_race_summary.csv", index=False)
+print(f"\nSaved: {FORECASTS_DIR / 'horse_race_summary.csv'}")

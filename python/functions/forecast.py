@@ -142,3 +142,34 @@ def run_ljungbox(errs_dict, models, lags=4):
             "p_value": round(lb["lb_pvalue"].iloc[0], 4),
         })
     return pd.DataFrame(rows).sort_values("p_value")
+
+
+def summary_table(res, models, label=""):
+    """RMSE / MAE / ME per model alongside its MCS p-value under both losses.
+
+    `res` is the dict returned by report(); MCS p-values are taken from the
+    block_size=1 run performed inside it. Models present in `models` but absent
+    from the MCS panel (the ensembles, which report() puts in spa_models only)
+    carry NaN rather than being dropped, so the omission stays visible in the
+    table instead of looking like the model was never evaluated.
+    """
+    p = {loss: res["mcs"][loss].set_index("Model")["MCS_p"] for loss in ("sq", "abs")}
+    inc = {loss: res["mcs"][loss].set_index("Model")["In_MCS"] for loss in ("sq", "abs")}
+
+    rows = []
+    for m in models:
+        e = np.asarray(res["errs"][m], float)
+        e = e[np.isfinite(e)]
+        rows.append({
+            "Subsample": label,
+            "Model": m,
+            "RMSE": np.sqrt(np.mean(e ** 2)),
+            "MAE": np.mean(np.abs(e)),
+            "ME": np.mean(e),
+            "MCS_p_MSE": p["sq"].get(m, np.nan),
+            "In_MCS_MSE": inc["sq"].get(m, pd.NA),
+            "MCS_p_MAE": p["abs"].get(m, np.nan),
+            "In_MCS_MAE": inc["abs"].get(m, pd.NA),
+            "n": len(e),
+        })
+    return pd.DataFrame(rows).sort_values("RMSE").reset_index(drop=True)
