@@ -1,5 +1,6 @@
 library(urca)
 library(vars)
+source("R/functions/vecm_functions.R")   # trace_rank_decision
 
 eng_tf <- readRDS("R/models/eng_tf.rds")
 eng_ts <- ts(eng_tf, start = c(1975, 1), frequency = 4)
@@ -39,6 +40,7 @@ K <- 5L
 jo_eng <- ca.jo(eng_tf, type = "trace", ecdet = "none", K = K,
                 spec = "transitory", season = 4, dumvar = final_dummies)
 summary(jo_eng)
+trace_rank_decision(jo_eng)
 
 jo_eng_eig <- ca.jo(eng_tf, type = "eigen", ecdet = "none", K = K,
                     spec = "transitory", season = 4, dumvar = final_dummies)
