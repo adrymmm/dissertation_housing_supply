@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import scienceplots  # noqa: F401 - registers the science/high-vis style sheets
 from pathlib import Path
 from arch.bootstrap import MCS, SPA
 from statsmodels.stats.diagnostic import acorr_ljungbox
@@ -103,28 +104,30 @@ def plot_rmse_bar(errs, outdir, title="", exclude=(), note=""):
     rmse = {n: np.sqrt(np.nanmean(np.asarray(e, float) ** 2))
             for n, e in errs.items() if n not in exclude}
     order = sorted(rmse, key=rmse.get)
+    # Ensembles get a distinct, deliberately "non-cycle" color; everything else is neutral gray.
     colors = ['#2E7D32' if n.startswith('Ensemble') else '#9E9E9E'
               for n in order]
 
-    fig, ax = plt.subplots(figsize=(9, 5.4))
-    bars = ax.bar(order, [rmse[n] for n in order], color=colors)
-    for bar in bars:
-        h = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width() / 2, h + 0.003, f"{h:.4f}",
-                ha='center', va='bottom', fontsize=9)
+    with plt.style.context(["science", "no-latex", "high-vis"]):
+        fig, ax = plt.subplots(figsize=(9, 5.4))
+        bars = ax.bar(order, [rmse[n] for n in order], color=colors)
+        for bar in bars:
+            h = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, h + 0.003, f"{h:.4f}",
+                    ha='center', va='bottom', fontsize=9)
 
-    ax.set_ylabel("RMSE")
-    ax.set_title(title)
-    ax.set_xticks(range(len(order)))
-    ax.set_xticklabels(order, rotation=30, ha='right')
-    if note:
-        fig.text(0.01, 0.01, note, fontsize=7.5, color='#555555', ha='left')
-        fig.tight_layout(rect=(0, 0.045, 1, 1))
-    else:
-        fig.tight_layout()
-    fig.savefig(outdir / f"{'_'.join(title.lower().replace('-', ' ').split())}.png",
-                dpi=200)
-    plt.show()
+        ax.set_ylabel("RMSE")
+        ax.set_title(title)
+        ax.set_xticks(range(len(order)))
+        ax.set_xticklabels(order, rotation=30, ha='right')
+        if note:
+            fig.text(0.01, 0.01, note, fontsize=7.5, color='#555555', ha='left')
+            fig.tight_layout(rect=(0, 0.045, 1, 1))
+        else:
+            fig.tight_layout()
+        fig.savefig(outdir / f"{'_'.join(title.lower().replace('-', ' ').split())}.png",
+                    dpi=300)
+        plt.show()
 
 def run_ljungbox(errs_dict, models, lags=4):
     """Ljung-Box on h=1 forecast errors"""
@@ -145,14 +148,7 @@ def run_ljungbox(errs_dict, models, lags=4):
 
 
 def summary_table(res, models, label=""):
-    """RMSE / MAE / ME per model alongside its MCS p-value under both losses.
-
-    `res` is the dict returned by report(); MCS p-values are taken from the
-    block_size=1 run performed inside it. Models present in `models` but absent
-    from the MCS panel (the ensembles, which report() puts in spa_models only)
-    carry NaN rather than being dropped, so the omission stays visible in the
-    table instead of looking like the model was never evaluated.
-    """
+    """RMSE / MAE / ME per model alongside its MCS p-value under both losses."""
     p = {loss: res["mcs"][loss].set_index("Model")["MCS_p"] for loss in ("sq", "abs")}
     inc = {loss: res["mcs"][loss].set_index("Model")["In_MCS"] for loss in ("sq", "abs")}
 
