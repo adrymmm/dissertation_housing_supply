@@ -1,18 +1,3 @@
-# MRF (Goulet Coulombe, "The Macroeconomy as a Random Forest"): a random forest
-# supplies time-varying coefficients for a linear equation. Two specifications:
-#   ARRF -- linear part = AR lags of lhstarts
-#   GTVP -- linear part = price-cost margin and Bank Rate
-# Price and cost enter as a margin, not separately. corr(lrprc, lrcc) = 0.987
-# (VIF ~38): the unrestricted fit leaves b_cost with sd 1.17, a +/-5 band and
-# the wrong sign, while b_price absorbs the common variation -- the two are not
-# separately identified. R/diagnostics/X_mrf_symmetry.R holds that fit; the
-# restriction is retained because it cannot be relaxed, not by assumption.
-# Bank Rate is a control -- its coefficient is small and imprecise, but
-# corr(margin, r3) = -0.79 so dropping it would bias the margin path.
-# Breaks are handled by the forest, so no crisis dummies enter here; seasonality
-# is left to y_l4 and a quarter index in S.
-# Writes R/models/mrf_h1.rds, which R/08_horse_race.R joins in.
-
 library(zoo)
 library(pracma)
 library(parallel)

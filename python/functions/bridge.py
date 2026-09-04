@@ -36,14 +36,7 @@ def parse_quarter(x):
 
 def seasonal_factors(series, since=None, freq=4):
     """Log-additive quarterly seasonal factors, classical decomposition
-    (centred 2x4 moving average), normalised to sum to zero.
-
-    Needed because OBR publishes some paths seasonally adjusted (transactions
-    are flagged as such in EFO table 1.16) while the models are estimated on
-    the raw NSA master series. Adding these back puts a projected SA path onto
-    the basis the coefficients were fitted on. `since` restricts to a recent
-    window so a changed seasonal regime isn't averaged with the 1970s.
-    """
+    (centred 2x4 moving average), normalised to sum to zero."""
     ln = np.log(series.dropna())
     trend = ln.rolling(freq, center=True).mean().rolling(2, center=True).mean()
     dev = (ln - trend).dropna()

@@ -27,12 +27,9 @@ nardl_var <- "lrcc"
 dum       <- c("d08Q3", "d20Q2", "d20Q3", "d23Q2", "d23Q3")
 seas      <- c("sd1", "sd2", "sd3")
 
-# ardl_best$order, the NARDL order, the choice of which variable to decompose,
-# and the VECM's K and rank were all picked on the full 1975-2025 sample --
-# i.e. this is the frozen spec, and it saw the evaluation window. Results
-# below are disclosure-only, not a real-time out-of-sample test. See
-# R/08b_horse_race_rt_check.R for a real-time re-selected sensitivity check
-# quantifying how much of the frozen spec's edge is specification leakage.
+# Frozen spec: ardl_best$order, NARDL order/variable, and VECM K/rank were all
+# picked on the full 1975-2025 sample (saw the eval window) -- disclosure-only,
+# not real-time OOS. See R/08b_horse_race_rt_check.R for a real-time check.
 
 stopifnot(all(c(y_name, dum, seas) %in% names(dat)))
 yv <- dat[[y_name]]
@@ -80,10 +77,8 @@ cat("NARDL: ", paste(nardl_x, collapse = " + "), " | ",
 # ---- ARDL-family one-step forecasts ------------------------------------
 lagv <- function(x, k) if (k == 0L) x else c(rep(NA_real_, k), head(x, -k))
 
-# contemp = TRUE  -> Conditional / ex post (used only for the internal design
-# check below -- the conditional forecast itself is not reported).
-# contemp = FALSE -> Direct (h = 1) predictive reparameterisation (not used
-# in this script; retained in design() as a generic switch).
+# contemp = TRUE -> conditional/ex post (internal design check only);
+# contemp = FALSE -> direct h=1 reparam (unused here, kept as a generic switch).
 design <- function(dat, y, xs, ord, fixed, contemp = TRUE) {
   stopifnot(length(ord) == 1L + length(xs))
   cl <- list()
@@ -123,14 +118,10 @@ fc1_rw <- function(dat, y, xs, ord, fixed, yv, o) {
           yv, o)$fc
 }
 
-# VECM: K and rank are fixed to the full-sample choices (03_vecm_core.R:
-# K = 5, r = 1). johansen_rank() is retained because vecm_fit1() below falls
-# back to it when r_use is NULL -- that branch is only exercised by the
-# real-time re-selection in R/08b_horse_race_rt_check.R, which calls
-# vecm_fit1(o, select_K(o), NULL); this script always passes R_RANK explicitly.
-# Sequential trace test: walk r = 0, 1, 2, ... and stop at the first
-# non-rejection. urca labels rows "r = 0  |" / "r <= k |" and lists them in
-# descending k, so the r each row refers to is parsed rather than assumed.
+# K/rank fixed to full-sample choices (03_vecm_core.R); johansen_rank() only
+# fires via vecm_fit1()'s NULL-r_use fallback, used by 08b's real-time re-selection.
+# Sequential trace test (r = 0, 1, 2, ... stop at first non-rejection); parses
+# urca's row labels rather than assuming their order.
 johansen_rank <- function(jo, kmax) {
   r_of <- as.integer(sub("^.*r *(?:<=|=) *([0-9]+).*$", "\\1", rownames(jo@cval)))
   stopifnot(!any(is.na(r_of)))
@@ -141,11 +132,8 @@ johansen_rank <- function(jo, kmax) {
   kmax
 }
 
-# X_ardl_cond is not a reported forecast (no ardl_cond output column) -- it is
-# kept purely as an internal correctness check: it's the only design() call
-# that can be validated directly against ardl_best's own coefficients (the rw
-# design can't be, since it substitutes lagged values instead of matching
-# ardl_best directly).
+# X_ardl_cond is not a reported forecast -- kept only as an internal check,
+# validated directly against ardl_best's own coefficients (the rw design can't be).
 X_ardl_cond <- design(dat, y_name, ardl_x, ord_ardl, c(dum, seas), contemp = TRUE)
 
 # Validation: manual conditional design must reproduce ardl_best coefs
@@ -169,10 +157,8 @@ local({
   d2 <- dat; d2[[xp]][o + 1L] <- d2[[xp]][o + 1L] + 1
 
   probe <- function(dd) c(
-    # contemp-style probe kept ONLY to validate the perturbation itself is
-    # non-vacuous -- it is not a reported conditional forecast. Without it, a
-    # bug that made the perturbation a no-op would pass the no-leakage
-    # assertions below trivially.
+    # Validates the perturbation is non-vacuous (not itself a reported forecast) --
+    # without it, a no-op perturbation bug would pass the leakage checks below trivially.
     cond_a = fit_fc1(design(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), TRUE),  yv, o)$fc,
     rw_a   = fc1_rw(dd, y_name, ardl_x,  ord_ardl,  c(dum, seas), yv, o),
     rw_n   = fc1_rw(dd, y_name, nardl_x, ord_nardl, c(dum, seas), yv, o)
@@ -194,11 +180,8 @@ vecm_fit1 <- function(o, K_use, r_use = NULL) {
               spec = "transitory", season = 4,
               dumvar = Dv[1:o, keep, drop = FALSE])
 
-  # @dumvar holds the impulse dummies only -- predict.vec2var rebuilds the
-  # season=4 centred seasonals itself from the tail of $datamat. So every
-  # column here is an impulse and every one is zero at a future date; the
-  # length check makes a urca rename fail loudly rather than leaving a
-  # dummy switched on at the target.
+  # @dumvar holds impulse dummies only (seasonals are rebuilt separately by
+  # predict.vec2var); all are zero at the target -- length check guards against a silent urca rename.
   dv <- tail(jo@dumvar, 4)[1, , drop = FALSE]
   hit <- intersect(colnames(dv), dum)
   stopifnot(ncol(dv) == ncol(jo@dumvar), length(hit) == length(keep))
@@ -247,9 +230,7 @@ struct_fc <- do.call(rbind, lapply(origin_set, function(o) {
 
 # ---- assemble ----------------------------------------------------------
 BENCH  <- c("rw", "snaive", "ar", "tslm", "tslm_s")
-# Frozen: lag orders / K / rank chosen once on the full 1975-2025 sample,
-# including the evaluation window -- disclosure-only, not a real-time
-# out-of-sample test.
+# Frozen: orders/K/rank chosen once on the full sample incl. eval window -- disclosure-only, not real-time OOS.
 STRUCT <- c("vecm", "ardl_rw", "nardl_rw")
 # MRF: spec fixed a priori (no selection on the evaluation window) and refit at
 # every origin, so unlike STRUCT these are genuine real-time forecasts.
