@@ -5,6 +5,62 @@ VECM of England private housing starts (with ARDL/NARDL and MacroRF
 horse-race comparisons), used to forecast starts against the government's
 1.5m-homes target.
 
+## Headline results
+
+**Long-run elasticities.** Normalising the Johansen cointegrating vector on
+log private starts (`R/03_vecm_core.R` → `R/04_vecm_results.R`) and comparing
+to the ARDL long-run multipliers (`R/05_ARDL.R`,
+`R/models/ardl_coefs_full.csv`, "longrun" rows):
+
+| Regressor | VECM | ARDL |
+|---|---|---|
+| Real house prices (`lrprc`) | 0.54 | 0.54 |
+| Transaction volume (`lvol`) | 1.40 | 0.83 |
+| 3-month rate (`r3`) | −0.02 | −0.02 |
+| Dwelling stock (`lstock`) | −0.01 | *(not in ARDL spec)* |
+| Real construction costs (`lrcc`) | −1.30 | −1.30 |
+
+The two independently-estimated models agree closely on the price elasticity
+(~0.54) and construction-cost elasticity (~−1.3); they diverge more on the
+transaction-volume elasticity (1.40 vs 0.83), and both find the interest
+rate has almost no long-run effect on starts.
+
+**Forecast vs the government's target.** The government's 1.5m-homes pledge
+covers the five fiscal years of the current Parliament, FY2024-25 to
+FY2028-29 — the window `python/functions/bridge.py::run_bridge()` actually
+sums over (FY2024-25 and FY2025-26 are known/actual, identical across
+models; only FY2026-27 onward is forecast). Bridging the OBR-scenario
+ARDL/NARDL forecasts (`R/09_foreARDL.R`) and the VECM unconditional forecast
+(`R/10_foreVECM.R`) through to net additional dwellings via that function
+gives:
+
+| Model | Cumulative net additions, FY2024-25–FY2028-29 | % of 1.5m target | Shortfall |
+|---|---|---|---|
+| ARDL  | 1,010,284 | 67.4% | 489,716 |
+| NARDL | 1,007,250 | 67.2% | 492,750 |
+| VECM  | 1,016,799 | 67.8% | 483,201 |
+
+`python/core/08_net_additions.ipynb` runs this same bridge and prints these
+figures but doesn't persist them to a file. Note:
+`data/outputs/forecasts/final_forecasts/five_year_2026_2030_summary.xlsx`
+reports a shallower ~37–42% shortfall, but that comes from
+`python/forecast.ipynb` — a script outside the numbered pipeline (not listed
+in Repo structure below, and with hardcoded Windows paths from another
+machine) that sums a looser calendar-year 2026–2030 window rather than the
+actual Parliament target period. Treat the table above as authoritative.
+
+**Forecasting horse race.** In pseudo-out-of-sample RMSE comparison across
+14 models/ensembles (`R/08_horse_race.R`, `python/core/05_aggr_forecast.py`,
+`data/outputs/forecasts/horse_race_summary.csv`), the random-walk-augmented
+**NARDL and ARDL specifications rank best** on both the full sample and
+excluding the COVID outlier quarters, narrowly ahead of an inverse-MSE
+ensemble and the headline Johansen **VECM**. All three are retained in the
+Model Confidence Set on both RMSE and MAE, alongside AR, ARRF, GTVP-MacroRF,
+Chronos and seasonal-naive; the plain random walk and LSTM are excluded on
+MAE, and the TSLM/TSLM-seasonal linear benchmarks are excluded on both.
+
+**Known limitations** that qualify both of the above are listed below.
+
 ## Repo structure
 
 ```
