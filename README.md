@@ -41,13 +41,7 @@ gives:
 | VECM  | 1,016,799 | 67.8% | 483,201 |
 
 `python/core/08_net_additions.ipynb` runs this same bridge and prints these
-figures but doesn't persist them to a file. Note:
-`data/outputs/forecasts/final_forecasts/five_year_2026_2030_summary.xlsx`
-reports a shallower ~37–42% shortfall, but that comes from
-`python/forecast.ipynb` — a script outside the numbered pipeline (not listed
-in Repo structure below, and with hardcoded Windows paths from another
-machine) that sums a looser calendar-year 2026–2030 window rather than the
-actual Parliament target period. Treat the table above as authoritative.
+figures.
 
 **Forecasting horse race.** In pseudo-out-of-sample RMSE comparison across
 14 models/ensembles (`R/08_horse_race.R`, `python/core/05_aggr_forecast.py`,
